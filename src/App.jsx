@@ -559,7 +559,7 @@ function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false}) {
   const [scanErr,setScanErr]=useState("");
   const [scanInput,setScanInput]=useState("");
   const [lastAction,setLastAction]=useState(null);
-  const [customers,setCustomers]=useState([]);
+  const [customers,setCustomers]=useState([]);  // always array
   const [rewards,setRewards]=useState([]);
   const [loading,setLoading]=useState(false);
   const [loyalFilter,setLoyalFilter]=useState("all");
@@ -573,8 +573,13 @@ function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false}) {
     setLoading(true);
     try {
       const [c,r]=await Promise.all([sb.getCustomers(),sb.getRewards()]);
-      setCustomers(c||[]); setRewards(r||[]);
-    } catch(e){}
+      setCustomers(Array.isArray(c)?c:[]);
+      setRewards(Array.isArray(r)?r:[]);
+    } catch(e){
+      console.error("loadData error:",e);
+      setCustomers([]);
+      setRewards([]);
+    }
     setLoading(false);
   }
 
@@ -640,8 +645,9 @@ function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false}) {
       .then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);});
   }
 
-  const listData=loyalFilter==="all"?customers:loyalFilter==="full"?customers.filter(c=>c.stamps>=STAMP_GOAL):customers.filter(c=>c.stamps>0&&c.stamps<STAMP_GOAL);
-  const exportData=exportFilter==="all"?customers:exportFilter==="full"?customers.filter(c=>c.stamps>=STAMP_GOAL):exportFilter==="gold"?customers.filter(c=>getTier(c.visits)==="gold"):customers.filter(c=>getTier(c.visits)==="silver");
+  const safeCustomers=Array.isArray(customers)?customers:[];
+  const listData=loyalFilter==="all"?safeCustomers:loyalFilter==="full"?safeCustomers.filter(c=>c.stamps>=STAMP_GOAL):safeCustomers.filter(c=>c.stamps>0&&c.stamps<STAMP_GOAL);
+  const exportData=exportFilter==="all"?safeCustomers:exportFilter==="full"?safeCustomers.filter(c=>c.stamps>=STAMP_GOAL):exportFilter==="gold"?safeCustomers.filter(c=>getTier(c.visits)==="gold"):safeCustomers.filter(c=>getTier(c.visits)==="silver");
 
   if(!unlocked) return <PinGate lang={lang} onUnlock={()=>setUnlocked(true)} onClose={()=>setUnlocked(false)}/>;
 
@@ -695,7 +701,7 @@ function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false}) {
 
           {/* Stats */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
-            {[[customers.length,ar?"عضو":"Members","👥"],[rewards.length,ar?"مكافأة":"Rewards","🎁"],[customers.filter(c=>c.stamps>=STAMP_GOAL).length,ar?"جاهز":"Ready","⭐"]].map(([v,l,ic])=>(
+            {[[safeCustomers.length,ar?"عضو":"Members","👥"],[Array.isArray(rewards)?rewards.length:0,ar?"مكافأة":"Rewards","🎁"],[safeCustomers.filter(c=>c&&c.stamps>=STAMP_GOAL).length,ar?"جاهز":"Ready","⭐"]].map(([v,l,ic])=>(
               <div key={l} style={{background:"#0a0a0a",border:"1px solid #0f0f0f",borderRadius:14,padding:"14px 12px",textAlign:"center"}}>
                 <div style={{fontSize:18,marginBottom:4}}>{ic}</div>
                 <div style={{fontSize:22,fontWeight:800,color:"#fb4f07"}}>{v}</div>
@@ -769,8 +775,9 @@ function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false}) {
             <button onClick={loadData} style={{padding:"7px 14px",borderRadius:20,background:"#0d0d0d",border:"1px solid #111",color:"#555",fontWeight:700,fontSize:11,cursor:"pointer"}}>🔄 {ar?"تحديث":"Refresh"}</button>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {listData.map(c=>{
-              const t=TIERS[getTier(c.visits)];
+            {(listData||[]).map(c=>{
+              if(!c) return null;
+              const t=TIERS[getTier(c.visits||0)];
               return(
                 <div key={c.id} style={{background:"#0a0a0a",border:"1px solid "+(c.stamps>=STAMP_GOAL?"rgba(251,79,7,0.2)":"#0f0f0f"),borderRadius:14,padding:"14px 16px",display:"flex",alignItems:"center",gap:12}}>
                   <div style={{width:38,height:38,borderRadius:"50%",background:t.bg,border:"1px solid "+t.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{t.icon}</div>
