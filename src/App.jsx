@@ -678,7 +678,7 @@ function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false}) {
       {/* Tabs */}
       <div style={{display:"flex",background:"#060606",borderBottom:"1px solid rgba(255,255,255,0.04)",position:"sticky",top:0,zIndex:9}}>
         {[["scan",ar?"🔲 مسح":"🔲 Scan"],["members",ar?"👥 الأعضاء":"👥 Members"],["export",ar?"📲 تصدير":"📲 Export"]].map(([t,l])=>(
-          <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"13px 6px",background:"transparent",border:"none",borderBottom:tab===t?"2px solid #fb4f07":"2px solid transparent",color:tab===t?"#fb4f07":"#444",fontWeight:tab===t?700:400,fontSize:12,cursor:"pointer"}}>
+          <button key={t} onClick={()=>{setTab(t);if(t==="members"||t==="export")loadData();}} style={{flex:1,padding:"13px 6px",background:"transparent",border:"none",borderBottom:tab===t?"2px solid #fb4f07":"2px solid transparent",color:tab===t?"#fb4f07":"#444",fontWeight:tab===t?700:400,fontSize:12,cursor:"pointer"}}>
             {l}
           </button>
         ))}
@@ -768,6 +768,15 @@ function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false}) {
         {/* MEMBERS TAB */}
         {tab==="members"&&(<>
           {loading&&<Spinner/>}
+          {!loading&&safeCustomers.length===0&&(
+            <div style={{textAlign:"center",padding:"50px 20px",color:"#444"}}>
+              <div style={{fontSize:40,marginBottom:12}}>👥</div>
+              <div style={{fontSize:14,marginBottom:8,color:"#666"}}>{ar?"لا يوجد أعضاء بعد":"No members yet"}</div>
+              <button onClick={loadData} style={{background:"rgba(251,79,7,0.1)",border:"1px solid rgba(251,79,7,0.2)",color:"#fb4f07",padding:"8px 20px",borderRadius:10,fontSize:12,cursor:"pointer",fontWeight:700}}>
+                🔄 {ar?"تحديث البيانات":"Refresh"}
+              </button>
+            </div>
+          )}
           <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
             {[["all",ar?"الكل":"All"],["active",ar?"نشط":"Active"],["full",ar?"مكافأة 🎁":"Reward 🎁"]].map(([k,l])=>(
               <button key={k} onClick={()=>setLoyalFilter(k)} style={{padding:"7px 14px",borderRadius:20,background:loyalFilter===k?"#fb4f07":"#0d0d0d",border:"1px solid "+(loyalFilter===k?"transparent":"#111"),color:loyalFilter===k?"#fff":"#555",fontWeight:700,fontSize:11,cursor:"pointer"}}>{l}</button>
