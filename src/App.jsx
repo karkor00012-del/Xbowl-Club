@@ -50,6 +50,10 @@ const sb = {
   async addReward(r) {
     return await sb.query("rewards","POST",r);
   },
+  async deleteCustomer(id) {
+    await sb.query("rewards","DELETE",null,`?customer_id=eq.${id}`);
+    return await sb.query("customers","DELETE",null,`?id=eq.${id}`);
+  },
 };
 
 // ── HELPERS ────────────────────────────────────────────────────
@@ -137,7 +141,9 @@ function PinGate({onUnlock,onClose,lang="ar"}) {
   }
   return (
     <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,zIndex:400,background:"rgba(0,0,0,0.95)",backdropFilter:"blur(20px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-      <div style={{background:"#0f0f0f",border:"1px solid #222",borderRadius:24,padding:"36px 28px",width:"100%",maxWidth:320,textAlign:"center"}}>
+      <div style={{background:"#0f0f0f",border:"1px solid #222",borderRadius:24,padding:"36px 28px 28px",width:"100%",maxWidth:320,textAlign:"center",position:"relative"}}>
+        {/* Close X button — always visible */}
+        <button onClick={onClose} style={{position:"absolute",top:16,left:16,background:"rgba(255,255,255,0.07)",border:"none",color:"#888",width:32,height:32,borderRadius:"50%",fontSize:17,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>
         <div style={{width:60,height:60,borderRadius:"50%",background:"linear-gradient(135deg,#fb4f07,#c93d00)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 16px",boxShadow:"0 8px 24px rgba(251,79,7,0.4)"}}>🔐</div>
         <div style={{fontWeight:800,fontSize:18,color:"#fff",marginBottom:4}}>{lang==="ar"?"صلاحية المدير":"Manager Access"}</div>
         <div style={{fontSize:12,color:"#555",marginBottom:28}}>{lang==="ar"?"أدخل الـ PIN":"Enter PIN"}</div>
@@ -150,7 +156,7 @@ function PinGate({onUnlock,onClose,lang="ar"}) {
           ))}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-          <button onClick={onClose} style={{background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:14,color:"#444",fontSize:11,padding:"16px 0",cursor:"pointer"}}>{lang==="ar"?"إلغاء":"Cancel"}</button>
+          <button onClick={onClose} style={{background:"#1a1a1a",border:"1px solid #333",borderRadius:14,color:"#aaa",fontSize:13,fontWeight:600,padding:"16px 0",cursor:"pointer"}}>{lang==="ar"?"إلغاء":"Cancel"}</button>
           <button onClick={()=>press("0")} style={{background:"#141414",border:"1px solid #1e1e1e",borderRadius:14,color:"#fff",fontSize:22,fontWeight:300,padding:"16px 0",cursor:"pointer"}}>0</button>
           <button onClick={()=>setPin(p=>p.slice(0,-1))} style={{background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:14,color:"#666",fontSize:20,padding:"16px 0",cursor:"pointer"}}>⌫</button>
         </div>
@@ -289,7 +295,7 @@ function Spinner() {
 // ══════════════════════════════════════════════════════════════
 // CUSTOMER APP
 // ══════════════════════════════════════════════════════════════
-function CustomerApp({lang,setLang}) {
+function CustomerApp({lang,setLang,desktopMode=false}) {
   const [screen,setScreen]=useState("home");
   const [phone,setPhone]=useState("");
   const [customer,setCustomer]=useState(null);
@@ -545,8 +551,8 @@ function CustomerApp({lang,setLang}) {
 // ══════════════════════════════════════════════════════════════
 // STAFF APP — PIN PROTECTED
 // ══════════════════════════════════════════════════════════════
-function StaffApp({lang,setLang}) {
-  const [unlocked,setUnlocked]=useState(false);
+function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false}) {
+  const [unlocked,setUnlocked]=useState(alreadyUnlocked);
   const [tab,setTab]=useState("scan");
   const [showScanner,setShowScanner]=useState(false);
   const [scanResult,setScanResult]=useState(null);
@@ -570,6 +576,32 @@ function StaffApp({lang,setLang}) {
       setCustomers(c||[]); setRewards(r||[]);
     } catch(e){}
     setLoading(false);
+  }
+
+  async function doDeleteCustomer(c){
+    setLoading(true);
+    try { await sb.deleteCustomer(c.id); await loadData(); }
+    catch(e){ alert(ar?"خطأ في الحذف":"Delete error"); }
+    setLoading(false); setConfirmDelete(null);
+  }
+
+  async function doRemoveStamp(c){
+    if(c.stamps<=0) return;
+    setLoading(true);
+    try {
+      await sb.updateCustomer(c.id,{stamps:c.stamps-1});
+      await loadData();
+    } catch(e){}
+    setLoading(false); setEditCustomer(null);
+  }
+
+  async function doResetStamps(c){
+    setLoading(true);
+    try {
+      await sb.updateCustomer(c.id,{stamps:0});
+      await loadData();
+    } catch(e){}
+    setLoading(false); setEditCustomer(null);
   }
 
   async function handleScanResult(val){
@@ -756,11 +788,74 @@ function StaffApp({lang,setLang}) {
                     </div>
                     <div style={{fontSize:11,color:"#444"}}>{c.phone}</div>
                   </div>
-                  <TierBadge tier={getTier(c.visits)} small lang={lang}/>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    <TierBadge tier={getTier(c.visits)} small lang={lang}/>
+                    <div style={{display:"flex",gap:5}}>
+                      <button onClick={()=>setEditCustomer(c)} style={{background:"rgba(251,79,7,0.1)",border:"1px solid rgba(251,79,7,0.2)",color:"#fb4f07",padding:"4px 8px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                        ✏️ {ar?"أختام":"Stamps"}
+                      </button>
+                      <button onClick={()=>setConfirmDelete(c)} style={{background:"rgba(255,59,48,0.08)",border:"1px solid rgba(255,59,48,0.2)",color:"#ff3b30",padding:"4px 8px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                        🗑️
+                      </button>
+                    </div>
+                  </div>
                 </div>
               );
             })}
           </div>
+
+          {/* Edit Stamps Modal */}
+          {editCustomer&&(
+            <div onClick={e=>e.target===e.currentTarget&&setEditCustomer(null)} style={{position:"fixed",inset:0,zIndex:300,background:"rgba(0,0,0,0.88)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+              <div style={{background:"#0f0f0f",border:"1px solid #2a2a2a",borderRadius:20,width:"100%",maxWidth:360,overflow:"hidden"}}>
+                <div style={{background:"linear-gradient(135deg,#fb4f07,#c93d00)",padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <div style={{fontWeight:800,fontSize:15,color:"#fff"}}>✏️ {ar?"تعديل الأختام":"Edit Stamps"}</div>
+                  <button onClick={()=>setEditCustomer(null)} style={{background:"rgba(0,0,0,0.25)",border:"none",color:"#fff",width:28,height:28,borderRadius:"50%",fontSize:14,cursor:"pointer"}}>✕</button>
+                </div>
+                <div style={{padding:"20px"}}>
+                  <div style={{fontWeight:700,color:"#fff",fontSize:15,marginBottom:4}}>{editCustomer.name}</div>
+                  <div style={{fontSize:12,color:"#555",marginBottom:16}}>{editCustomer.phone} · {editCustomer.visits} {ar?"زيارة":"visits"}</div>
+                  {/* Stamps display */}
+                  <div style={{display:"flex",gap:8,marginBottom:20,justifyContent:"center"}}>
+                    {Array.from({length:STAMP_GOAL}).map((_,i)=>(
+                      <div key={i} style={{width:44,height:44,borderRadius:"50%",background:i<editCustomer.stamps?"linear-gradient(135deg,#fb4f07,#c93d00)":"#1a1a1a",border:i<editCustomer.stamps?"none":"1px solid #2a2a2a",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,boxShadow:i<editCustomer.stamps?"0 0 12px rgba(251,79,7,0.4)":"none"}}>{i<editCustomer.stamps?"🎳":""}</div>
+                    ))}
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                    <button onClick={()=>doRemoveStamp(editCustomer)} disabled={editCustomer.stamps<=0||loading} style={{padding:"12px",background:editCustomer.stamps>0?"rgba(251,79,7,0.1)":"#0d0d0d",border:"1px solid "+(editCustomer.stamps>0?"rgba(251,79,7,0.3)":"#1a1a1a"),borderRadius:12,color:editCustomer.stamps>0?"#fb4f07":"#333",fontWeight:700,fontSize:14,cursor:editCustomer.stamps>0?"pointer":"not-allowed"}}>
+                      ➖ {ar?"حذف ختم واحد":"Remove 1 Stamp"} ({editCustomer.stamps} → {Math.max(0,editCustomer.stamps-1)})
+                    </button>
+                    <button onClick={()=>doResetStamps(editCustomer)} disabled={editCustomer.stamps===0||loading} style={{padding:"12px",background:"rgba(255,59,48,0.08)",border:"1px solid rgba(255,59,48,0.2)",borderRadius:12,color:editCustomer.stamps>0?"#ff3b30":"#333",fontWeight:700,fontSize:14,cursor:editCustomer.stamps>0?"pointer":"not-allowed"}}>
+                      🔄 {ar?"إعادة تعيين كل الأختام":"Reset All Stamps"} (→ 0)
+                    </button>
+                    <button onClick={()=>setEditCustomer(null)} style={{padding:"11px",background:"transparent",border:"1px solid #1e1e1e",borderRadius:12,color:"#555",fontSize:13,cursor:"pointer"}}>
+                      {ar?"إلغاء":"Cancel"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Confirm Delete Modal */}
+          {confirmDelete&&(
+            <div onClick={e=>e.target===e.currentTarget&&setConfirmDelete(null)} style={{position:"fixed",inset:0,zIndex:300,background:"rgba(0,0,0,0.9)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+              <div style={{background:"#0f0f0f",border:"1px solid rgba(255,59,48,0.3)",borderRadius:20,width:"100%",maxWidth:340,padding:"28px 24px",textAlign:"center"}}>
+                <div style={{fontSize:44,marginBottom:12}}>🗑️</div>
+                <div style={{fontWeight:800,color:"#fff",fontSize:17,marginBottom:6}}>{ar?"حذف الزبون؟":"Delete Customer?"}</div>
+                <div style={{fontSize:13,color:"#fb4f07",fontWeight:700,marginBottom:4}}>{confirmDelete.name}</div>
+                <div style={{fontSize:12,color:"#555",marginBottom:24}}>{ar?"سيتم حذف البطاقة والأختام بشكل نهائي":"Card and stamps will be permanently deleted"}</div>
+                <div style={{display:"flex",gap:10}}>
+                  <button onClick={()=>setConfirmDelete(null)} style={{flex:1,padding:"12px",background:"transparent",border:"1px solid #2a2a2a",borderRadius:12,color:"#777",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+                    {ar?"إلغاء":"Cancel"}
+                  </button>
+                  <button onClick={()=>doDeleteCustomer(confirmDelete)} disabled={loading} style={{flex:1,padding:"12px",background:"linear-gradient(135deg,#ff3b30,#c0392b)",border:"none",borderRadius:12,color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",boxShadow:"0 6px 18px rgba(255,59,48,0.3)"}}>
+                    {loading?"...":(ar?"حذف نهائي":"Delete")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>)}
 
         {/* EXPORT TAB */}
@@ -818,20 +913,121 @@ function StaffApp({lang,setLang}) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// ROOT
+// DESKTOP LAYOUT — side-by-side staff panel + customer card
+// ══════════════════════════════════════════════════════════════
+function DesktopLayout({lang,setLang}) {
+  const [staffUnlocked,setStaffUnlocked]=useState(false);
+  const [showPin,setShowPin]=useState(false);
+  const ar=lang==="ar";
+
+  return (
+    <div style={{minHeight:"100vh",background:"#060606",display:"flex",flexDirection:"column"}}>
+      {/* Top nav */}
+      <div style={{background:"#080808",borderBottom:"2px solid #fb4f07",padding:"14px 32px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:40,height:40,borderRadius:"50%",background:"linear-gradient(135deg,#fb4f07,#ff8c00)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,boxShadow:"0 0 16px rgba(251,79,7,0.5)"}}>🎳</div>
+          <div>
+            <div style={{fontSize:22,fontWeight:900,color:"#fb4f07",letterSpacing:3,lineHeight:1}}>XBOWL</div>
+            <div style={{fontSize:9,color:"#444",letterSpacing:4}}>LOYALTY MANAGEMENT</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>setLang(ar?"en":"ar")} style={{background:"rgba(251,79,7,0.08)",border:"1px solid rgba(251,79,7,0.2)",color:"#fb4f07",padding:"6px 16px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:700}}>
+            {ar?"EN":"عربي"}
+          </button>
+          {!staffUnlocked
+            ? <button onClick={()=>setShowPin(true)} style={{background:"linear-gradient(135deg,#fb4f07,#c93d00)",border:"none",color:"#fff",padding:"8px 20px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:700,boxShadow:"0 4px 12px rgba(251,79,7,0.4)"}}>
+                🔐 {ar?"دخول الموظف":"Staff Login"}
+              </button>
+            : <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:20,padding:"6px 14px",fontSize:11,color:"#22c55e",fontWeight:700}}>
+                  ✓ {ar?"الموظف مسجل دخول":"Staff Logged In"}
+                </div>
+                <button onClick={()=>setStaffUnlocked(false)} style={{background:"#111",border:"1px solid #222",color:"#555",padding:"6px 14px",borderRadius:20,cursor:"pointer",fontSize:11}}>
+                  {ar?"خروج":"Logout"}
+                </button>
+              </div>
+          }
+        </div>
+      </div>
+
+      {showPin&&<PinGate lang={lang} onUnlock={()=>{setStaffUnlocked(true);setShowPin(false);}} onClose={()=>setShowPin(false)}/>}
+
+      {/* Main content */}
+      <div style={{flex:1,display:"grid",gridTemplateColumns:staffUnlocked?"1fr 420px":"1fr",gap:0,overflow:"hidden"}}>
+
+        {/* Left — Staff panel (only when unlocked) */}
+        {staffUnlocked&&(
+          <div style={{borderRight:"1px solid #111",overflow:"auto",background:"#060606"}}>
+            <StaffApp lang={lang} setLang={setLang} desktopMode alreadyUnlocked/>
+          </div>
+        )}
+
+        {/* Right — Customer preview / kiosk */}
+        <div style={{overflow:"auto",background:"#0a0a0a",display:"flex",flexDirection:"column"}}>
+          {!staffUnlocked&&(
+            <div style={{padding:"24px 32px 0",textAlign:"center"}}>
+              <div style={{fontSize:11,color:"#333",letterSpacing:3,marginBottom:6}}>{ar?"معاينة واجهة الزبون":"CUSTOMER KIOSK PREVIEW"}</div>
+              <div style={{fontSize:12,color:"#444",marginBottom:20}}>{ar?"هذا ما يراه الزبون على الشاشة أو جواله":"What customers see on screen or their phone"}</div>
+            </div>
+          )}
+          <div style={{flex:1,display:"flex",justifyContent:"center",padding:"0 16px 40px"}}>
+            <div style={{width:"100%",maxWidth:440}}>
+              <CustomerApp lang={lang} setLang={()=>{}} desktopMode/>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// ROOT — responsive: desktop vs mobile
 // ══════════════════════════════════════════════════════════════
 export default function App() {
   const [mode,setMode]=useState("customer");
   const [lang,setLang]=useState("ar");
+  const [isDesktop,setIsDesktop]=useState(window.innerWidth>=1024);
   const ar=lang==="ar";
+
+  useEffect(()=>{
+    function handleResize(){ setIsDesktop(window.innerWidth>=1024); }
+    window.addEventListener("resize",handleResize);
+    return ()=>window.removeEventListener("resize",handleResize);
+  },[]);
+
+  // Desktop: show side-by-side layout
+  if(isDesktop) return <DesktopLayout lang={lang} setLang={setLang}/>;
+
+  // Mobile: show bottom tab navigation
   return (
     <div>
-      {mode==="customer"?<CustomerApp lang={lang} setLang={setLang}/>:<StaffApp lang={lang} setLang={setLang}/>}
-      <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"rgba(6,6,6,0.98)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:40,padding:"5px",display:"flex",gap:3,zIndex:200,backdropFilter:"blur(24px)",boxShadow:"0 8px 40px rgba(0,0,0,0.8)"}}>
-        {[["customer",ar?"📱 الزبون":"📱 Customer"],["staff",ar?"🔧 الموظف":"🔧 Staff"]].map(([v,l])=>(
-          <button key={v} onClick={()=>setMode(v)} style={{padding:"9px 22px",borderRadius:30,background:mode===v?"linear-gradient(135deg,#fb4f07,#c93d00)":"transparent",border:"none",color:mode===v?"#fff":"#444",fontWeight:700,fontSize:12,cursor:"pointer",boxShadow:mode===v?"0 4px 12px rgba(251,79,7,0.4)":"none",transition:"all 0.2s"}}>{l}</button>
+      {mode==="customer"
+        ?<CustomerApp lang={lang} setLang={setLang}/>
+        :<StaffApp lang={lang} setLang={setLang}/>
+      }
+      {/* Mobile bottom tabs */}
+      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"rgba(6,6,6,0.98)",borderTop:"1px solid rgba(255,255,255,0.06)",padding:"8px 16px 20px",display:"flex",gap:8,zIndex:200,backdropFilter:"blur(24px)"}}>
+        {[
+          ["customer", ar?"الزبون":"Customer", "📱"],
+          ["staff",    ar?"الموظف":"Staff",    "🔧"],
+        ].map(([v,label,icon])=>(
+          <button key={v} onClick={()=>setMode(v)} style={{
+            flex:1, padding:"12px 8px",
+            background:mode===v?"linear-gradient(135deg,#fb4f07,#c93d00)":"#111",
+            border:"1px solid "+(mode===v?"transparent":"#1e1e1e"),
+            borderRadius:14, color:mode===v?"#fff":"#555",
+            fontWeight:700, fontSize:13, cursor:"pointer",
+            boxShadow:mode===v?"0 4px 12px rgba(251,79,7,0.4)":"none",
+            display:"flex", flexDirection:"column", alignItems:"center", gap:4,
+          }}>
+            <span style={{fontSize:20}}>{icon}</span>
+            {label}
+          </button>
         ))}
       </div>
+      <div style={{height:90}}/>
     </div>
   );
 }
