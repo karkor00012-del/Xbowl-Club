@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 
 // ── CONFIG ─────────────────────────────────────────────────────
 const SUPABASE_URL = "https://ooaqtwjqyiasqxuofaia.supabase.co";
@@ -86,36 +87,12 @@ const TIERS = {
   gold:  { ar:"ذهبي",  en:"Gold",   color:"#ffd700", glow:"rgba(255,215,0,0.4)",   icon:"🥇", bg:"linear-gradient(135deg,#3d3000,#1a1500)" },
 };
 
-// ── QR CODE ─────────────────────────────────────────────────────
+// ── QR CODE (real — using qrcode.react) ────────────────────────
 function QRCode({value,size=120}) {
-  const [svg,setSvg] = useState(null);
-  useEffect(()=>{
-    const S=25;
-    const mat=Array.from({length:S},()=>new Array(S).fill(0));
-    const setFinder=(r0,c0)=>{
-      for(let r=0;r<7;r++) for(let c=0;c<7;c++) mat[r0+r][c0+c]=1;
-      for(let r=1;r<6;r++) for(let c=1;c<6;c++) mat[r0+r][c0+c]=0;
-      for(let r=2;r<5;r++) for(let c=2;c<5;c++) mat[r0+r][c0+c]=1;
-    };
-    setFinder(0,0); setFinder(0,S-7); setFinder(S-7,0);
-    for(let i=8;i<S-8;i++){mat[6][i]=(i%2===0)?1:0; mat[i][6]=(i%2===0)?1:0;}
-    const h=(s,seed)=>{let v=seed^1234; for(let i=0;i<s.length;i++) v=Math.imul(v^s.charCodeAt(i),2654435761)>>>0; return v;};
-    for(let r=0;r<S;r++) for(let c=0;c<S;c++){
-      const skip=(r<9&&c<9)||(r<9&&c>S-9)||(r>S-9&&c<9)||(r===6||c===6);
-      if(!skip&&mat[r][c]===0) mat[r][c]=(h(value,r*S+c)%2)===0?1:0;
-    }
-    const cell=Math.floor(size/S);
-    const rects=[];
-    for(let r=0;r<S;r++) for(let c=0;c<S;c++)
-      if(mat[r][c]===1) rects.push(`<rect x="${c*cell}" y="${r*cell}" width="${cell}" height="${cell}" fill="white"/>`);
-    const s=`<svg xmlns="http://www.w3.org/2000/svg" width="${S*cell}" height="${S*cell}"><rect width="100%" height="100%" fill="#0a0a0a"/>${rects.join("")}</svg>`;
-    setSvg(s);
-  },[value,size]);
-  if(!svg) return <div style={{width:size,height:size,background:"#0a0a0a",borderRadius:8}}/>;
   return (
-    <div style={{background:"#0a0a0a",padding:8,borderRadius:8,display:"inline-flex",flexDirection:"column",alignItems:"center",gap:4}}>
-      <img src={"data:image/svg+xml;base64,"+btoa(svg)} width={size} height={size} style={{display:"block",borderRadius:4,imageRendering:"pixelated"}} alt="QR"/>
-      <div style={{color:"#fff",fontSize:9,letterSpacing:2,fontFamily:"monospace"}}>{value}</div>
+    <div style={{background:"#fff",padding:8,borderRadius:10,display:"inline-flex",flexDirection:"column",alignItems:"center",gap:4}}>
+      <QRCodeSVG value={value} size={size} bgColor="#ffffff" fgColor="#000000" level="M"/>
+      <div style={{color:"#000",fontSize:9,letterSpacing:2,fontFamily:"monospace",fontWeight:700}}>{value}</div>
     </div>
   );
 }
@@ -188,98 +165,55 @@ function QRScanner({onResult,onClose,lang="ar"}) {
   const [manual,setManual]=useState("");
   const [status,setStatus]=useState("idle"); // idle|loading|scanning|done|error
   const [errMsg,setErrMsg]=useState("");
-  const videoRef=useRef(null);
-  const canvasRef=useRef(null);
-  const streamRef=useRef(null);
-  const rafRef=useRef(null);
   const ar=lang==="ar";
 
-  // Load jsQR once
-  function loadJsQR(cb){
-    if(window.jsQR){cb();return;}
+  const html5QrRef=useRef(null);
+
+  function stopScanner(){
+    if(html5QrRef.current){
+      try{ html5QrRef.current.stop().catch(()=>{}); } catch(e){}
+      html5QrRef.current=null;
+    }
+  }
+
+  function loadHtml5QR(cb){
+    if(window.Html5Qrcode){cb();return;}
     const s=document.createElement("script");
-    s.src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js";
+    s.src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
     s.onload=cb;
-    s.onerror=()=>setErrMsg(ar?"فشل تحميل المكتبة":"Failed to load library");
+    s.onerror=()=>{ setStatus("error"); setErrMsg(ar?"فشل تحميل المكتبة":"Library load failed"); };
     document.head.appendChild(s);
   }
 
-  function stopStream(){
-    cancelAnimationFrame(rafRef.current);
-    streamRef.current?.getTracks().forEach(t=>t.stop());
-    streamRef.current=null;
-  }
-
   function startCamera(){
-    setStatus("loading");
-    setErrMsg("");
-    loadJsQR(async()=>{
+    setStatus("loading"); setErrMsg("");
+    loadHtml5QR(()=>{
       try {
-        const constraints={
-          video:{
-            facingMode:{ideal:"environment"},
-            width:{ideal:1280},height:{ideal:720}
-          }
-        };
-        const stream=await navigator.mediaDevices.getUserMedia(constraints);
-        streamRef.current=stream;
-        const v=videoRef.current;
-        if(!v){stream.getTracks().forEach(t=>t.stop());return;}
-        v.srcObject=stream;
-        v.setAttribute("playsinline","true");
-        v.setAttribute("autoplay","true");
-        v.muted=true;
-        await v.play().catch(()=>{});
-        setStatus("scanning");
-        scanLoop();
-      } catch(e){
-        setStatus("error");
-        setErrMsg(ar?"لا يمكن الوصول للكاميرا\nاستخدم الإدخال اليدوي أو صوّر QR بكاميرا الجوال":"Camera access denied\nUse manual entry or scan QR with phone camera");
-      }
+        const scanner=new window.Html5Qrcode("xbowl-qr-reader");
+        html5QrRef.current=scanner;
+        scanner.start(
+          {facingMode:"environment"},
+          {fps:10, qrbox:{width:220,height:220}, aspectRatio:1.0},
+          (decodedText)=>{ stopScanner(); onResult(decodedText); },
+          ()=>{}
+        ).then(()=>setStatus("scanning"))
+         .catch(e=>{ setStatus("error"); setErrMsg(ar?"لا يمكن الوصول للكاميرا\nاستخدم التقاط صورة أو الإدخال اليدوي":"Camera denied\nUse photo capture or manual entry"); });
+      } catch(e){ setStatus("error"); }
     });
   }
 
-  function scanLoop(){
-    rafRef.current=requestAnimationFrame(()=>{
-      const v=videoRef.current, c=canvasRef.current;
-      if(!v||!c||!streamRef.current){return;}
-      if(v.readyState>=2&&v.videoWidth>0){
-        const ctx=c.getContext("2d",{willReadFrequently:true});
-        c.width=v.videoWidth; c.height=v.videoHeight;
-        ctx.drawImage(v,0,0);
-        try {
-          const img=ctx.getImageData(0,0,c.width,c.height);
-          const code=window.jsQR?.(img.data,img.width,img.height,{inversionAttempts:"dontInvert"});
-          if(code?.data){ stopStream(); onResult(code.data); return; }
-        } catch(e){}
-      }
-      scanLoop();
-    });
-  }
-
-  // Handle image file (works universally — iOS photo library too)
   function handleFile(e){
-    const file=e.target.files[0]; if(!file)return;
+    const file=e.target.files[0]; if(!file) return;
     setStatus("loading");
-    loadJsQR(()=>{
-      const img=new Image();
-      const url=URL.createObjectURL(file);
-      img.onload=()=>{
-        const c=document.createElement("canvas");
-        c.width=img.width; c.height=img.height;
-        const ctx=c.getContext("2d");
-        ctx.drawImage(img,0,0);
-        const data=ctx.getImageData(0,0,c.width,c.height);
-        const code=window.jsQR?.(data.data,data.width,data.height,{inversionAttempts:"attemptBoth"});
-        URL.revokeObjectURL(url);
-        if(code?.data){ onResult(code.data); }
-        else{ setStatus("error"); setErrMsg(ar?"لم يتم العثور على QR في الصورة":"No QR found in image"); }
-      };
-      img.src=url;
+    loadHtml5QR(()=>{
+      const scanner=new window.Html5Qrcode("xbowl-qr-reader-file");
+      scanner.scanFile(file,true)
+        .then(text=>{ onResult(text); })
+        .catch(()=>{ setStatus("error"); setErrMsg(ar?"لم يتم العثور على QR في الصورة — حاول مرة أخرى":"No QR found — try again"); });
     });
   }
 
-  useEffect(()=>{ startCamera(); return ()=>stopStream(); },[]);
+  useEffect(()=>{ startCamera(); return ()=>stopScanner(); },[]);
 
   function submitManual(){ if(manual.trim()) onResult(manual.trim().toUpperCase()); }
 
@@ -294,30 +228,18 @@ function QRScanner({onResult,onClose,lang="ar"}) {
         </div>
 
         <div style={{padding:"20px"}}>
-          {/* Camera view */}
-          <div style={{position:"relative",borderRadius:14,overflow:"hidden",background:"#050505",marginBottom:14,aspectRatio:"4/3",border:"1px solid #111"}}>
-            <video ref={videoRef} style={{width:"100%",height:"100%",objectFit:"cover",display:status==="scanning"?"block":"none"}} muted playsInline autoPlay/>
-            <canvas ref={canvasRef} style={{display:"none"}}/>
-
-            {status==="scanning"&&(<>
-              {[["top:10px","left:10px"],["top:10px","right:10px"],["bottom:10px","left:10px"],["bottom:10px","right:10px"]].map(([t,s],i)=>(
-                <div key={i} style={{position:"absolute",width:26,height:26,borderTop:t.includes("top")?"3px solid #fb4f07":"none",borderBottom:t.includes("bottom")?"3px solid #fb4f07":"none",borderLeft:s.includes("left")?"3px solid #fb4f07":"none",borderRight:s.includes("right")?"3px solid #fb4f07":"none",...Object.fromEntries([t,s].map(x=>x.split(":")))}}/>
-              ))}
-              <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,transparent,#fb4f07,transparent)",animation:"scan 2s linear infinite"}}/>
-              <div style={{position:"absolute",bottom:8,left:0,right:0,textAlign:"center",fontSize:11,color:"rgba(255,255,255,0.45)"}}>
-                {ar?"وجّه الكاميرا على QR Code":"Point camera at QR Code"}
-              </div>
-            </>)}
-
-            {(status==="loading")&&(
-              <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:10}}>
+          {/* Camera — html5-qrcode renders inside this div */}
+          <div style={{position:"relative",borderRadius:14,overflow:"hidden",background:"#050505",marginBottom:14,border:"1px solid #111"}}>
+            <div id="xbowl-qr-reader" style={{width:"100%"}}/>
+            <div id="xbowl-qr-reader-file" style={{display:"none"}}/>
+            {status==="loading"&&(
+              <div style={{position:"absolute",inset:0,minHeight:200,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:10}}>
                 <div style={{width:32,height:32,border:"3px solid #1e1e1e",borderTop:"3px solid #fb4f07",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
                 <div style={{color:"#555",fontSize:12}}>{ar?"جاري تفعيل الكاميرا...":"Starting camera..."}</div>
               </div>
             )}
-
             {status==="error"&&(
-              <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:10,padding:20}}>
+              <div style={{minHeight:180,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:10,padding:20}}>
                 <span style={{fontSize:32}}>📷</span>
                 <div style={{color:"#fb4f07",fontSize:12,textAlign:"center",whiteSpace:"pre-line"}}>{errMsg}</div>
                 <button onClick={startCamera} style={{background:"rgba(251,79,7,0.15)",border:"1px solid rgba(251,79,7,0.3)",color:"#fb4f07",padding:"6px 16px",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:700}}>
