@@ -183,119 +183,168 @@ function PinGate({onUnlock,onClose,lang="ar"}) {
   );
 }
 
-// ── QR SCANNER (jsQR — works on iPhone Safari) ─────────────────
+// ── QR SCANNER (universal — works on ALL devices) ──────────────
 function QRScanner({onResult,onClose,lang="ar"}) {
+  const [manual,setManual]=useState("");
+  const [status,setStatus]=useState("idle"); // idle|loading|scanning|done|error
+  const [errMsg,setErrMsg]=useState("");
   const videoRef=useRef(null);
   const canvasRef=useRef(null);
   const streamRef=useRef(null);
   const rafRef=useRef(null);
-  const [status,setStatus]=useState("loading"); // loading|scanning|error
-  const [err,setErr]=useState("");
-  const [manual,setManual]=useState("");
-  const [jsQRLoaded,setJsQRLoaded]=useState(false);
   const ar=lang==="ar";
 
-  // Load jsQR dynamically
-  useEffect(()=>{
-    if(window.jsQR){setJsQRLoaded(true);return;}
+  // Load jsQR once
+  function loadJsQR(cb){
+    if(window.jsQR){cb();return;}
     const s=document.createElement("script");
     s.src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js";
-    s.onload=()=>setJsQRLoaded(true);
-    s.onerror=()=>setStatus("error");
+    s.onload=cb;
+    s.onerror=()=>setErrMsg(ar?"فشل تحميل المكتبة":"Failed to load library");
     document.head.appendChild(s);
-  },[]);
+  }
 
-  useEffect(()=>{
-    if(!jsQRLoaded) return;
-    let active=true;
-    async function start(){
+  function stopStream(){
+    cancelAnimationFrame(rafRef.current);
+    streamRef.current?.getTracks().forEach(t=>t.stop());
+    streamRef.current=null;
+  }
+
+  function startCamera(){
+    setStatus("loading");
+    setErrMsg("");
+    loadJsQR(async()=>{
       try {
-        const stream=await navigator.mediaDevices.getUserMedia({
-          video:{facingMode:{ideal:"environment"},width:{ideal:640},height:{ideal:480}}
-        });
-        if(!active){stream.getTracks().forEach(t=>t.stop());return;}
+        const constraints={
+          video:{
+            facingMode:{ideal:"environment"},
+            width:{ideal:1280},height:{ideal:720}
+          }
+        };
+        const stream=await navigator.mediaDevices.getUserMedia(constraints);
         streamRef.current=stream;
         const v=videoRef.current;
+        if(!v){stream.getTracks().forEach(t=>t.stop());return;}
         v.srcObject=stream;
         v.setAttribute("playsinline","true");
-        await v.play();
+        v.setAttribute("autoplay","true");
+        v.muted=true;
+        await v.play().catch(()=>{});
         setStatus("scanning");
-        tick();
+        scanLoop();
       } catch(e){
-        setErr(ar?"لا يمكن الوصول للكاميرا — استخدم الإدخال اليدوي":"Camera unavailable — use manual entry");
         setStatus("error");
+        setErrMsg(ar?"لا يمكن الوصول للكاميرا\nاستخدم الإدخال اليدوي أو صوّر QR بكاميرا الجوال":"Camera access denied\nUse manual entry or scan QR with phone camera");
       }
-    }
-    function tick(){
-      if(!active) return;
+    });
+  }
+
+  function scanLoop(){
+    rafRef.current=requestAnimationFrame(()=>{
       const v=videoRef.current, c=canvasRef.current;
-      if(v&&c&&v.readyState===v.HAVE_ENOUGH_DATA){
+      if(!v||!c||!streamRef.current){return;}
+      if(v.readyState>=2&&v.videoWidth>0){
         const ctx=c.getContext("2d",{willReadFrequently:true});
         c.width=v.videoWidth; c.height=v.videoHeight;
-        ctx.drawImage(v,0,0,c.width,c.height);
-        const img=ctx.getImageData(0,0,c.width,c.height);
-        const code=window.jsQR(img.data,img.width,img.height,{inversionAttempts:"dontInvert"});
-        if(code&&code.data){
-          active=false;
-          streamRef.current?.getTracks().forEach(t=>t.stop());
-          onResult(code.data);
-          return;
-        }
+        ctx.drawImage(v,0,0);
+        try {
+          const img=ctx.getImageData(0,0,c.width,c.height);
+          const code=window.jsQR?.(img.data,img.width,img.height,{inversionAttempts:"dontInvert"});
+          if(code?.data){ stopStream(); onResult(code.data); return; }
+        } catch(e){}
       }
-      rafRef.current=requestAnimationFrame(tick);
-    }
-    start();
-    return ()=>{
-      active=false;
-      cancelAnimationFrame(rafRef.current);
-      streamRef.current?.getTracks().forEach(t=>t.stop());
-    };
-  },[jsQRLoaded]);
+      scanLoop();
+    });
+  }
+
+  // Handle image file (works universally — iOS photo library too)
+  function handleFile(e){
+    const file=e.target.files[0]; if(!file)return;
+    setStatus("loading");
+    loadJsQR(()=>{
+      const img=new Image();
+      const url=URL.createObjectURL(file);
+      img.onload=()=>{
+        const c=document.createElement("canvas");
+        c.width=img.width; c.height=img.height;
+        const ctx=c.getContext("2d");
+        ctx.drawImage(img,0,0);
+        const data=ctx.getImageData(0,0,c.width,c.height);
+        const code=window.jsQR?.(data.data,data.width,data.height,{inversionAttempts:"attemptBoth"});
+        URL.revokeObjectURL(url);
+        if(code?.data){ onResult(code.data); }
+        else{ setStatus("error"); setErrMsg(ar?"لم يتم العثور على QR في الصورة":"No QR found in image"); }
+      };
+      img.src=url;
+    });
+  }
+
+  useEffect(()=>{ startCamera(); return ()=>stopStream(); },[]);
 
   function submitManual(){ if(manual.trim()) onResult(manual.trim().toUpperCase()); }
 
   return (
     <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,zIndex:300,background:"rgba(0,0,0,0.95)",backdropFilter:"blur(10px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{background:"#0a0a0a",border:"1px solid rgba(251,79,7,0.3)",borderRadius:20,width:"100%",maxWidth:380,overflow:"hidden"}}>
+
+        {/* Header */}
         <div style={{background:"linear-gradient(135deg,#fb4f07,#c93d00)",padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{fontWeight:800,fontSize:16,color:"#fff"}}>{ar?"🔲 مسح بطاقة الزبون":"🔲 Scan Customer Card"}</div>
-          <button onClick={onClose} style={{background:"rgba(0,0,0,0.25)",border:"none",color:"#fff",width:28,height:28,borderRadius:"50%",fontSize:14,cursor:"pointer"}}>✕</button>
+          <button onClick={()=>{stopStream();onClose();}} style={{background:"rgba(0,0,0,0.25)",border:"none",color:"#fff",width:28,height:28,borderRadius:"50%",fontSize:14,cursor:"pointer"}}>✕</button>
         </div>
+
         <div style={{padding:"20px"}}>
-          {/* Camera */}
-          <div style={{position:"relative",borderRadius:14,overflow:"hidden",background:"#000",marginBottom:16,aspectRatio:"4/3"}}>
-            <video ref={videoRef} style={{width:"100%",height:"100%",objectFit:"cover",display:status==="scanning"?"block":"none"}} muted playsInline/>
+          {/* Camera view */}
+          <div style={{position:"relative",borderRadius:14,overflow:"hidden",background:"#050505",marginBottom:14,aspectRatio:"4/3",border:"1px solid #111"}}>
+            <video ref={videoRef} style={{width:"100%",height:"100%",objectFit:"cover",display:status==="scanning"?"block":"none"}} muted playsInline autoPlay/>
             <canvas ref={canvasRef} style={{display:"none"}}/>
-            {/* Overlay guides */}
+
             {status==="scanning"&&(<>
-              {[["top:12px","left:12px"],["top:12px","right:12px"],["bottom:12px","left:12px"],["bottom:12px","right:12px"]].map(([t,s],i)=>(
-                <div key={i} style={{position:"absolute",width:28,height:28,borderTop:t.includes("top")?"3px solid #fb4f07":"none",borderBottom:t.includes("bottom")?"3px solid #fb4f07":"none",borderLeft:s.includes("left")?"3px solid #fb4f07":"none",borderRight:s.includes("right")?"3px solid #fb4f07":"none",...Object.fromEntries([t,s].map(x=>x.split(":")))}}/>
+              {[["top:10px","left:10px"],["top:10px","right:10px"],["bottom:10px","left:10px"],["bottom:10px","right:10px"]].map(([t,s],i)=>(
+                <div key={i} style={{position:"absolute",width:26,height:26,borderTop:t.includes("top")?"3px solid #fb4f07":"none",borderBottom:t.includes("bottom")?"3px solid #fb4f07":"none",borderLeft:s.includes("left")?"3px solid #fb4f07":"none",borderRight:s.includes("right")?"3px solid #fb4f07":"none",...Object.fromEntries([t,s].map(x=>x.split(":")))}}/>
               ))}
               <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,transparent,#fb4f07,transparent)",animation:"scan 2s linear infinite"}}/>
-              <div style={{position:"absolute",bottom:8,left:0,right:0,textAlign:"center",fontSize:11,color:"rgba(255,255,255,0.5)"}}>
+              <div style={{position:"absolute",bottom:8,left:0,right:0,textAlign:"center",fontSize:11,color:"rgba(255,255,255,0.45)"}}>
                 {ar?"وجّه الكاميرا على QR Code":"Point camera at QR Code"}
               </div>
             </>)}
-            {status==="loading"&&(
-              <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}>
+
+            {(status==="loading")&&(
+              <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:10}}>
                 <div style={{width:32,height:32,border:"3px solid #1e1e1e",borderTop:"3px solid #fb4f07",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
-                <div style={{color:"#555",fontSize:12}}>{ar?"جاري تحميل الكاميرا...":"Loading camera..."}</div>
+                <div style={{color:"#555",fontSize:12}}>{ar?"جاري تفعيل الكاميرا...":"Starting camera..."}</div>
               </div>
             )}
+
             {status==="error"&&(
-              <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:8,padding:16}}>
-                <span style={{fontSize:36}}>📷</span>
-                <span style={{color:"#fb4f07",fontSize:12,textAlign:"center"}}>{err}</span>
+              <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:10,padding:20}}>
+                <span style={{fontSize:32}}>📷</span>
+                <div style={{color:"#fb4f07",fontSize:12,textAlign:"center",whiteSpace:"pre-line"}}>{errMsg}</div>
+                <button onClick={startCamera} style={{background:"rgba(251,79,7,0.15)",border:"1px solid rgba(251,79,7,0.3)",color:"#fb4f07",padding:"6px 16px",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:700}}>
+                  {ar?"إعادة المحاولة":"Retry"}
+                </button>
               </div>
             )}
           </div>
-          <div style={{fontSize:10,color:"#444",textAlign:"center",marginBottom:12}}>
-            {ar?"— أو أدخل رقم البطاقة يدوياً —":"— or enter card number manually —"}
+
+          {/* Upload from gallery — works on ALL iOS devices */}
+          <label style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",background:"rgba(251,79,7,0.08)",border:"1px solid rgba(251,79,7,0.2)",borderRadius:12,color:"#fb4f07",fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:14,boxSizing:"border-box"}}>
+            <span style={{fontSize:18}}>🖼️</span>
+            {ar?"التقط صورة QR أو اختر من المعرض":"Take QR photo or choose from gallery"}
+            <input type="file" accept="image/*" capture="environment" onChange={handleFile} style={{display:"none"}}/>
+          </label>
+
+          {/* Divider */}
+          <div style={{fontSize:10,color:"#333",textAlign:"center",marginBottom:12,letterSpacing:1}}>
+            {ar?"— أو أدخل رقم البطاقة يدوياً —":"— or enter card ID manually —"}
           </div>
+
+          {/* Manual */}
           <div style={{display:"flex",gap:8}}>
-            <input value={manual} onChange={e=>setManual(e.target.value.toUpperCase())} placeholder="XB001" onKeyDown={e=>e.key==="Enter"&&submitManual()}
-              style={{flex:1,background:"#111",border:"1px solid #1e1e1e",borderRadius:12,color:"#fff",padding:"12px 14px",fontSize:16,outline:"none",fontFamily:"monospace",letterSpacing:3}}
-              onFocus={e=>e.target.style.borderColor="rgba(251,79,7,0.5)"} onBlur={e=>e.target.style.borderColor="#1e1e1e"}/>
+            <input value={manual} onChange={e=>setManual(e.target.value.toUpperCase())} placeholder="XB001"
+              onKeyDown={e=>e.key==="Enter"&&submitManual()}
+              style={{flex:1,background:"#111",border:"1px solid #1a1a1a",borderRadius:12,color:"#fff",padding:"12px 14px",fontSize:16,outline:"none",fontFamily:"monospace",letterSpacing:3}}
+              onFocus={e=>e.target.style.borderColor="rgba(251,79,7,0.5)"} onBlur={e=>e.target.style.borderColor="#1a1a1a"}/>
             <button onClick={submitManual} style={{background:"#fb4f07",border:"none",color:"#fff",padding:"12px 18px",borderRadius:12,fontWeight:800,fontSize:13,cursor:"pointer"}}>
               {ar?"بحث":"Search"}
             </button>
