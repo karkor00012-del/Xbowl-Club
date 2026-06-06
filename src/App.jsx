@@ -296,9 +296,16 @@ function Spinner() {
 // CUSTOMER APP
 // ══════════════════════════════════════════════════════════════
 function CustomerApp({lang,setLang,desktopMode=false}) {
-  const [screen,setScreen]=useState("home");
+  const [screen,setScreen]=useState(()=>{
+    try{ return sessionStorage.getItem("xb_cust_screen")||"home"; } catch(e){ return "home"; }
+  });
   const [phone,setPhone]=useState("");
-  const [customer,setCustomer]=useState(null);
+  const [customer,setCustomer]=useState(()=>{
+    try{
+      const s=sessionStorage.getItem("xb_cust_data");
+      return s?JSON.parse(s):null;
+    } catch(e){ return null; }
+  });
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(false);
   const [regForm,setRegForm]=useState({name:"",phone:""});
@@ -333,7 +340,9 @@ function CustomerApp({lang,setLang,desktopMode=false}) {
         joined:Date.now(), last_visit:Date.now(),
       };
       const created=await sb.createCustomer(nc);
-      setCustomer(created||nc); setJustReg(true); setScreen("card");
+      const finalC=created||nc;
+      setCustomer(finalC); setJustReg(true); setScreen("card");
+      try{ sessionStorage.setItem("xb_cust_data",JSON.stringify(finalC)); sessionStorage.setItem("xb_cust_screen","card"); } catch(e){}
     } catch(e){ setRegErr({phone:ar?"الرقم مسجل مسبقاً":"Phone already registered"}); }
     setLoading(false);
   }
@@ -552,7 +561,10 @@ function CustomerApp({lang,setLang,desktopMode=false}) {
 // STAFF APP — PIN PROTECTED
 // ══════════════════════════════════════════════════════════════
 function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false}) {
-  const [unlocked,setUnlocked]=useState(alreadyUnlocked);
+  const [unlocked,setUnlocked]=useState(()=>{
+    if(alreadyUnlocked) return true;
+    try{ return sessionStorage.getItem("xbowl_staff_unlocked")==="1"; } catch(e){ return false; }
+  });
   const [tab,setTab]=useState("scan");
   const [showScanner,setShowScanner]=useState(false);
   const [scanResult,setScanResult]=useState(null);
@@ -931,12 +943,24 @@ function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false}) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// DESKTOP LAYOUT — side-by-side staff panel + customer card
+// DESKTOP LAYOUT
 // ══════════════════════════════════════════════════════════════
+const STAFF_SESSION_KEY = "xbowl_staff_unlocked";
+
 function DesktopLayout({lang,setLang}) {
-  const [staffUnlocked,setStaffUnlocked]=useState(false);
+  // Persist staff login in sessionStorage (stays until tab is closed)
+  const [staffUnlocked,setStaffUnlocked]=useState(()=>sessionStorage.getItem(STAFF_SESSION_KEY)==="1");
   const [showPin,setShowPin]=useState(false);
   const ar=lang==="ar";
+
+  function unlock(){
+    sessionStorage.setItem(STAFF_SESSION_KEY,"1");
+    setStaffUnlocked(true); setShowPin(false);
+  }
+  function logout(){
+    sessionStorage.removeItem(STAFF_SESSION_KEY);
+    setStaffUnlocked(false);
+  }
 
   return (
     <div style={{minHeight:"100vh",background:"#060606",display:"flex",flexDirection:"column"}}>
@@ -961,7 +985,7 @@ function DesktopLayout({lang,setLang}) {
                 <div style={{background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:20,padding:"6px 14px",fontSize:11,color:"#22c55e",fontWeight:700}}>
                   ✓ {ar?"الموظف مسجل دخول":"Staff Logged In"}
                 </div>
-                <button onClick={()=>setStaffUnlocked(false)} style={{background:"#111",border:"1px solid #222",color:"#555",padding:"6px 14px",borderRadius:20,cursor:"pointer",fontSize:11}}>
+                <button onClick={logout} style={{background:"#111",border:"1px solid #222",color:"#555",padding:"6px 14px",borderRadius:20,cursor:"pointer",fontSize:11}}>
                   {ar?"خروج":"Logout"}
                 </button>
               </div>
@@ -969,32 +993,20 @@ function DesktopLayout({lang,setLang}) {
         </div>
       </div>
 
-      {showPin&&<PinGate lang={lang} onUnlock={()=>{setStaffUnlocked(true);setShowPin(false);}} onClose={()=>setShowPin(false)}/>}
+      {showPin&&<PinGate lang={lang} onUnlock={unlock} onClose={()=>setShowPin(false)}/>}
 
-      {/* Main content */}
-      <div style={{flex:1,display:"grid",gridTemplateColumns:staffUnlocked?"1fr 420px":"1fr",gap:0,overflow:"hidden"}}>
-
-        {/* Left — Staff panel (only when unlocked) */}
-        {staffUnlocked&&(
-          <div style={{borderRight:"1px solid #111",overflow:"auto",background:"#060606"}}>
-            <StaffApp lang={lang} setLang={setLang} desktopMode alreadyUnlocked/>
-          </div>
-        )}
-
-        {/* Right — Customer preview / kiosk */}
-        <div style={{overflow:"auto",background:"#0a0a0a",display:"flex",flexDirection:"column"}}>
-          {!staffUnlocked&&(
-            <div style={{padding:"24px 32px 0",textAlign:"center"}}>
-              <div style={{fontSize:11,color:"#333",letterSpacing:3,marginBottom:6}}>{ar?"معاينة واجهة الزبون":"CUSTOMER KIOSK PREVIEW"}</div>
-              <div style={{fontSize:12,color:"#444",marginBottom:20}}>{ar?"هذا ما يراه الزبون على الشاشة أو جواله":"What customers see on screen or their phone"}</div>
+      {/* Main content — full screen staff panel when unlocked, customer app when not */}
+      <div style={{flex:1,overflow:"hidden"}}>
+        {staffUnlocked
+          ? <div style={{height:"100%",overflow:"auto"}}>
+              <StaffApp lang={lang} setLang={setLang} desktopMode alreadyUnlocked/>
             </div>
-          )}
-          <div style={{flex:1,display:"flex",justifyContent:"center",padding:"0 16px 40px"}}>
-            <div style={{width:"100%",maxWidth:440}}>
-              <CustomerApp lang={lang} setLang={()=>{}} desktopMode/>
+          : <div style={{height:"100%",overflow:"auto",display:"flex",justifyContent:"center",alignItems:"flex-start",padding:"40px 16px",background:"#0a0a0a"}}>
+              <div style={{width:"100%",maxWidth:460}}>
+                <CustomerApp lang={lang} setLang={setLang} desktopMode/>
+              </div>
             </div>
-          </div>
-        </div>
+        }
       </div>
     </div>
   );
