@@ -5,7 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 const SUPABASE_URL = "https://ooaqtwjqyiasqxuofaia.supabase.co";
 const SUPABASE_KEY = "sb_publishable_jCB5RCh6cXRMWqkXmjC2PQ_Ew6A4kwI";
 const STAMP_GOAL  = 5;
-const MANAGER_PIN = "2030";
+const MANAGER_PIN = "1234";
 
 // ── SUPABASE CLIENT ────────────────────────────────────────────
 const sb = {
@@ -53,6 +53,12 @@ const sb = {
   async deleteCustomer(id) {
     await sb.query("rewards","DELETE",null,`?customer_id=eq.${id}`);
     return await sb.query("customers","DELETE",null,`?id=eq.${id}`);
+  },
+  async loginStaff(email, password) {
+    const rows = await sb.query("staff","GET",null,
+      `?email=eq.${encodeURIComponent(email)}&password_hash=eq.${encodeURIComponent(password)}&select=*`
+    );
+    return rows && rows[0] ? rows[0] : null;
   },
 };
 
@@ -129,39 +135,111 @@ function TierBadge({tier,small,lang="ar"}) {
   );
 }
 
-// ── PIN GATE ────────────────────────────────────────────────────
+// ── STAFF LOGIN GATE ────────────────────────────────────────────
 function PinGate({onUnlock,onClose,lang="ar"}) {
-  const [pin,setPin]=useState(""), [err,setErr]=useState(false);
-  function press(d){
-    const n=(pin+d).slice(0,4); setPin(n);
-    if(n.length===4){
-      if(n===MANAGER_PIN){onUnlock();}
-      else{setErr(true);setTimeout(()=>{setErr(false);setPin("");},700);}
+  const [email,setEmail]=useState("");
+  const [password,setPassword]=useState("");
+  const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(false);
+  const ar=lang==="ar";
+
+  async function doLogin(){
+    if(!email.trim()||!password.trim()){
+      setErr(ar?"أدخل الإيميل وكلمة المرور":"Enter email and password");
+      return;
     }
+    setLoading(true); setErr("");
+    try {
+      const staff=await sb.loginStaff(email.trim().toLowerCase(), password.trim());
+      if(staff){
+        // Save session
+        try{ localStorage.setItem("xbowl_staff_session",JSON.stringify({id:staff.id,name:staff.name,role:staff.role,email:staff.email})); }catch(e){}
+        onUnlock(staff);
+      } else {
+        setErr(ar?"إيميل أو كلمة مرور خاطئة":"Wrong email or password");
+      }
+    } catch(e){ setErr(ar?"حدث خطأ — تحقق من الاتصال":"Connection error"); }
+    setLoading(false);
   }
+
   return (
-    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,zIndex:400,background:"rgba(0,0,0,0.95)",backdropFilter:"blur(20px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-      <div style={{background:"#0f0f0f",border:"1px solid #222",borderRadius:24,padding:"36px 28px 28px",width:"100%",maxWidth:320,textAlign:"center",position:"relative"}}>
-        {/* Close X button — always visible */}
-        <button onClick={onClose} style={{position:"absolute",top:16,insetInlineStart:"auto",insetInlineEnd:"auto",right:"auto",left:16,background:"rgba(255,255,255,0.1)",border:"1px solid #333",color:"#ccc",width:36,height:36,borderRadius:"50%",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:10}}>✕</button>
-        <div style={{width:60,height:60,borderRadius:"50%",background:"linear-gradient(135deg,#fb4f07,#c93d00)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 16px",boxShadow:"0 8px 24px rgba(251,79,7,0.4)"}}>🔐</div>
-        <div style={{fontWeight:800,fontSize:18,color:"#fff",marginBottom:4}}>{lang==="ar"?"صلاحية المدير":"Manager Access"}</div>
-        <div style={{fontSize:12,color:"#555",marginBottom:28}}>{lang==="ar"?"أدخل الـ PIN":"Enter PIN"}</div>
-        <div style={{display:"flex",justifyContent:"center",gap:16,marginBottom:32,transform:err?"translateX(10px)":"none",transition:"transform 0.1s"}}>
-          {[0,1,2,3].map(i=><div key={i} style={{width:12,height:12,borderRadius:"50%",background:pin.length>i?(err?"#ff3b30":"#fb4f07"):"#222",transition:"all 0.2s",boxShadow:pin.length>i&&!err?"0 0 8px rgba(251,79,7,0.6)":"none"}}/>)}
+    <div style={{position:"fixed",inset:0,zIndex:400,background:"#060606",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"#0f0f0f",border:"1px solid #1e1e1e",borderRadius:24,width:"100%",maxWidth:380,overflow:"hidden"}}>
+        {/* Header */}
+        <div style={{background:"linear-gradient(135deg,#fb4f07,#c93d00)",padding:"28px 24px 22px",textAlign:"center",position:"relative"}}>
+          <div style={{fontSize:44,marginBottom:10}}>🎳</div>
+          <div style={{fontSize:20,fontWeight:900,color:"#fff",letterSpacing:2}}>XBOWL STAFF</div>
+          <div style={{fontSize:12,color:"rgba(255,255,255,0.7)",marginTop:4}}>{ar?"تسجيل دخول الموظف":"Staff Login"}</div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:12}}>
-          {[1,2,3,4,5,6,7,8,9].map(d=>(
-            <button key={d} onClick={()=>press(String(d))} style={{background:"#141414",border:"1px solid #1e1e1e",borderRadius:14,color:"#fff",fontSize:22,fontWeight:300,padding:"16px 0",cursor:"pointer"}}>{d}</button>
-          ))}
+
+        <div style={{padding:"24px 22px 28px"}}>
+          {/* Email */}
+          <div style={{marginBottom:14}}>
+            <label style={{display:"block",fontSize:10,color:"#555",letterSpacing:2,marginBottom:8}}>{ar?"الإيميل":"EMAIL"}</label>
+            <input
+              value={email} onChange={e=>{setEmail(e.target.value);setErr("");}}
+              placeholder={ar?"staff@xbowl.com":"staff@xbowl.com"}
+              type="email" inputMode="email" autoComplete="email"
+              onKeyDown={e=>e.key==="Enter"&&doLogin()}
+              style={{width:"100%",background:"#111",border:"1px solid "+(err?"#ff4444":"#1e1e1e"),borderRadius:12,color:"#fff",padding:"14px 16px",fontSize:15,outline:"none",boxSizing:"border-box",direction:"ltr"}}
+              onFocus={e=>e.target.style.borderColor="rgba(251,79,7,0.5)"}
+              onBlur={e=>e.target.style.borderColor=err?"#ff4444":"#1e1e1e"}
+            />
+          </div>
+
+          {/* Password */}
+          <div style={{marginBottom:20}}>
+            <label style={{display:"block",fontSize:10,color:"#555",letterSpacing:2,marginBottom:8}}>{ar?"كلمة المرور":"PASSWORD"}</label>
+            <input
+              value={password} onChange={e=>{setPassword(e.target.value);setErr("");}}
+              placeholder="••••••••"
+              type="password" autoComplete="current-password"
+              onKeyDown={e=>e.key==="Enter"&&doLogin()}
+              style={{width:"100%",background:"#111",border:"1px solid "+(err?"#ff4444":"#1e1e1e"),borderRadius:12,color:"#fff",padding:"14px 16px",fontSize:15,outline:"none",boxSizing:"border-box",direction:"ltr"}}
+              onFocus={e=>e.target.style.borderColor="rgba(251,79,7,0.5)"}
+              onBlur={e=>e.target.style.borderColor=err?"#ff4444":"#1e1e1e"}
+            />
+          </div>
+
+          {err&&<div style={{color:"#ff5555",fontSize:13,marginBottom:14,textAlign:"center",padding:"8px 12px",background:"rgba(255,85,85,0.08)",borderRadius:8,border:"1px solid rgba(255,85,85,0.2)"}}>⚠ {err}</div>}
+
+          {/* Login button */}
+          <button onClick={doLogin} disabled={loading} style={{
+            width:"100%",padding:"15px",
+            background:loading?"#1a1a1a":"linear-gradient(135deg,#fb4f07,#c93d00)",
+            border:"none",borderRadius:14,color:"#fff",
+            fontWeight:900,fontSize:15,cursor:loading?"not-allowed":"pointer",
+            boxShadow:loading?"none":"0 8px 24px rgba(251,79,7,0.4)",
+            marginBottom:12,
+            display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+          }}>
+            {loading
+              ? <><div style={{width:18,height:18,border:"2px solid #333",borderTop:"2px solid #fb4f07",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>{ar?"جاري التحقق...":"Verifying..."}</>
+              : <>{ar?"تسجيل الدخول":"Sign In"} 🔐</>
+            }
+          </button>
+
+          {/* Cancel — BIG and clear */}
+          <button
+            onClick={onClose}
+            style={{
+              width:"100%",padding:"14px",
+              background:"#1a1a1a",border:"2px solid #333",
+              borderRadius:14,color:"#ccc",
+              fontWeight:700,fontSize:15,cursor:"pointer",
+              display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+            }}
+          >
+            ← {ar?"رجوع":"Back"}
+          </button>
+
+          {/* Hint */}
+          <div style={{textAlign:"center",marginTop:16,fontSize:11,color:"#333"}}>
+            {ar?"للإدارة: manager@xbowl.com":"Manager: manager@xbowl.com"}
+          </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-          <button onClick={onClose} style={{background:"#222",border:"1px solid #444",borderRadius:14,color:"#ddd",fontSize:14,fontWeight:700,padding:"16px 0",cursor:"pointer"}}>{lang==="ar"?"إلغاء":"Cancel"}</button>
-          <button onClick={()=>press("0")} style={{background:"#141414",border:"1px solid #1e1e1e",borderRadius:14,color:"#fff",fontSize:22,fontWeight:300,padding:"16px 0",cursor:"pointer"}}>0</button>
-          <button onClick={()=>setPin(p=>p.slice(0,-1))} style={{background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:14,color:"#666",fontSize:20,padding:"16px 0",cursor:"pointer"}}>⌫</button>
-        </div>
-        {err&&<div style={{color:"#ff3b30",fontSize:12,marginTop:16,fontWeight:600}}>{lang==="ar"?"PIN خاطئ":"Wrong PIN"}</div>}
       </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
@@ -581,10 +659,19 @@ function CustomerApp({lang,setLang,desktopMode=false}) {
 // ══════════════════════════════════════════════════════════════
 // STAFF APP — PIN PROTECTED
 // ══════════════════════════════════════════════════════════════
-function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false,onCancelPin=null}) {
+function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false,onCancelPin=null,staffInfo:externalStaffInfo=null,onLogout=null}) {
   const [unlocked,setUnlocked]=useState(()=>{
     if(alreadyUnlocked) return true;
-    try{ return localStorage.getItem("xbowl_staff_unlocked")==="1"; } catch(e){ return false; }
+    try{
+      const s=localStorage.getItem("xbowl_staff_session");
+      return !!s;
+    } catch(e){ return false; }
+  });
+  const [staffInfo,setStaffInfo]=useState(()=>{
+    try{
+      const s=localStorage.getItem("xbowl_staff_session");
+      return s?JSON.parse(s):null;
+    } catch(e){ return null; }
   });
   const [tab,setTab]=useState("scan");
   const [showScanner,setShowScanner]=useState(false);
@@ -964,121 +1051,88 @@ function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false,onCancel
 }
 
 // ══════════════════════════════════════════════════════════════
-// DESKTOP LAYOUT
-// ══════════════════════════════════════════════════════════════
-const STAFF_SESSION_KEY = "xbowl_staff_unlocked";
-
-function DesktopLayout({lang,setLang}) {
-  // Persist staff login in sessionStorage (stays until tab is closed)
-  const [staffUnlocked,setStaffUnlocked]=useState(()=>localStorage.getItem(STAFF_SESSION_KEY)==="1");
-  const [showPin,setShowPin]=useState(false);
-  const ar=lang==="ar";
-
-  function unlock(){
-    localStorage.setItem(STAFF_SESSION_KEY,"1");
-    setStaffUnlocked(true); setShowPin(false);
-  }
-  function logout(){
-    localStorage.removeItem(STAFF_SESSION_KEY);
-    setStaffUnlocked(false);
-  }
-
-  return (
-    <div style={{minHeight:"100vh",background:"#060606",display:"flex",flexDirection:"column"}}>
-      {/* Top nav */}
-      <div style={{background:"#080808",borderBottom:"2px solid #fb4f07",padding:"14px 32px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:40,height:40,borderRadius:"50%",background:"linear-gradient(135deg,#fb4f07,#ff8c00)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,boxShadow:"0 0 16px rgba(251,79,7,0.5)"}}>🎳</div>
-          <div>
-            <div style={{fontSize:22,fontWeight:900,color:"#fb4f07",letterSpacing:3,lineHeight:1}}>XBOWL</div>
-            <div style={{fontSize:9,color:"#444",letterSpacing:4}}>LOYALTY MANAGEMENT</div>
-          </div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <button onClick={()=>setLang(ar?"en":"ar")} style={{background:"rgba(251,79,7,0.08)",border:"1px solid rgba(251,79,7,0.2)",color:"#fb4f07",padding:"6px 16px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:700}}>
-            {ar?"EN":"عربي"}
-          </button>
-          {!staffUnlocked
-            ? <button onClick={()=>setShowPin(true)} style={{background:"linear-gradient(135deg,#fb4f07,#c93d00)",border:"none",color:"#fff",padding:"8px 20px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:700,boxShadow:"0 4px 12px rgba(251,79,7,0.4)"}}>
-                🔐 {ar?"دخول الموظف":"Staff Login"}
-              </button>
-            : <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <div style={{background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:20,padding:"6px 14px",fontSize:11,color:"#22c55e",fontWeight:700}}>
-                  ✓ {ar?"الموظف مسجل دخول":"Staff Logged In"}
-                </div>
-                <button onClick={logout} style={{background:"#111",border:"1px solid #222",color:"#555",padding:"6px 14px",borderRadius:20,cursor:"pointer",fontSize:11}}>
-                  {ar?"خروج":"Logout"}
-                </button>
-              </div>
-          }
-        </div>
-      </div>
-
-      {showPin&&<PinGate lang={lang} onUnlock={unlock} onClose={()=>setShowPin(false)}/>}
-
-      {/* Main content — full screen staff panel when unlocked, customer app when not */}
-      <div style={{flex:1,overflow:"hidden"}}>
-        {staffUnlocked
-          ? <div style={{height:"100%",overflow:"auto"}}>
-              <StaffApp lang={lang} setLang={setLang} desktopMode alreadyUnlocked/>
-            </div>
-          : <div style={{height:"100%",overflow:"auto",display:"flex",justifyContent:"center",alignItems:"flex-start",padding:"40px 16px",background:"#0a0a0a"}}>
-              <div style={{width:"100%",maxWidth:460}}>
-                <CustomerApp lang={lang} setLang={setLang} desktopMode/>
-              </div>
-            </div>
-        }
-      </div>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════
-// ROOT — responsive: desktop vs mobile
+// ROOT — URL-based routing
 // ══════════════════════════════════════════════════════════════
 export default function App() {
-  const [mode,setMode]=useState("customer");
   const [lang,setLang]=useState("ar");
-  const [isDesktop,setIsDesktop]=useState(window.innerWidth>=1024);
-  const ar=lang==="ar";
+  const [path,setPath]=useState(window.location.pathname);
 
   useEffect(()=>{
-    function handleResize(){ setIsDesktop(window.innerWidth>=1024); }
-    window.addEventListener("resize",handleResize);
-    return ()=>window.removeEventListener("resize",handleResize);
+    function onPop(){ setPath(window.location.pathname); }
+    window.addEventListener("popstate",onPop);
+    return ()=>window.removeEventListener("popstate",onPop);
   },[]);
 
-  // Desktop: show side-by-side layout
-  if(isDesktop) return <DesktopLayout lang={lang} setLang={setLang}/>;
+  // /staff → Staff portal
+  if(path==="/staff"||path==="/staff/") {
+    return <StaffPortal lang={lang} setLang={setLang}/>;
+  }
 
-  // Mobile: show bottom tab navigation
+  // / → Customer app
+  return <CustomerPortal lang={lang} setLang={setLang}/>;
+}
+
+// ── CUSTOMER PORTAL ───────────────────────────────────────────
+function CustomerPortal({lang,setLang}) {
+  return <CustomerApp lang={lang} setLang={setLang}/>;
+}
+
+// ── STAFF PORTAL ──────────────────────────────────────────────
+function StaffPortal({lang,setLang}) {
+  const [unlocked,setUnlocked]=useState(()=>{
+    try{ return !!localStorage.getItem("xbowl_staff_session"); } catch(e){ return false; }
+  });
+  const [staffInfo,setStaffInfo]=useState(()=>{
+    try{ const s=localStorage.getItem("xbowl_staff_session"); return s?JSON.parse(s):null; } catch(e){ return null; }
+  });
+  const ar=lang==="ar";
+
+  function handleUnlock(staff){
+    setStaffInfo(staff); setUnlocked(true);
+  }
+  function handleLogout(){
+    localStorage.removeItem("xbowl_staff_session");
+    setStaffInfo(null); setUnlocked(false);
+  }
+  function goToCustomer(){
+    window.location.href="/";
+  }
+
+  if(!unlocked){
+    return (
+      <PinGate
+        lang={lang}
+        onUnlock={handleUnlock}
+        onClose={goToCustomer}
+      />
+    );
+  }
+
   return (
-    <div>
-      {mode==="customer"
-        ?<CustomerApp lang={lang} setLang={setLang}/>
-        :<StaffApp lang={lang} setLang={setLang} onCancelPin={()=>setMode("customer")}/>
-      }
-      {/* Mobile bottom tabs */}
-      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"rgba(6,6,6,0.98)",borderTop:"1px solid rgba(255,255,255,0.06)",padding:"8px 16px 20px",display:"flex",gap:8,zIndex:200,backdropFilter:"blur(24px)"}}>
-        {[
-          ["customer", ar?"الزبون":"Customer", "📱"],
-          ["staff",    ar?"الموظف":"Staff",    "🔧"],
-        ].map(([v,label,icon])=>(
-          <button key={v} onClick={()=>setMode(v)} style={{
-            flex:1, padding:"12px 8px",
-            background:mode===v?"linear-gradient(135deg,#fb4f07,#c93d00)":"#111",
-            border:"1px solid "+(mode===v?"transparent":"#1e1e1e"),
-            borderRadius:14, color:mode===v?"#fff":"#555",
-            fontWeight:700, fontSize:13, cursor:"pointer",
-            boxShadow:mode===v?"0 4px 12px rgba(251,79,7,0.4)":"none",
-            display:"flex", flexDirection:"column", alignItems:"center", gap:4,
-          }}>
-            <span style={{fontSize:20}}>{icon}</span>
-            {label}
+    <div style={{minHeight:"100vh",background:"#060606",fontFamily:"'Segoe UI',sans-serif"}}>
+      {/* Staff header */}
+      <div style={{background:"#080808",borderBottom:"2px solid #fb4f07",padding:"13px 22px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:34,height:34,borderRadius:"50%",background:"linear-gradient(135deg,#fb4f07,#ff8c00)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,boxShadow:"0 0 12px rgba(251,79,7,0.5)"}}>🎳</div>
+          <div>
+            <div style={{fontSize:16,fontWeight:900,color:"#fb4f07",letterSpacing:2,lineHeight:1}}>XBOWL</div>
+            <div style={{fontSize:9,color:"#444",letterSpacing:3}}>STAFF PORTAL</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:20,padding:"4px 12px",fontSize:11,color:"#22c55e",fontWeight:700}}>
+            ✓ {staffInfo?.name||(ar?"مسجل دخول":"Logged In")}
+          </div>
+          <button onClick={()=>setLang(ar?"en":"ar")} style={{background:"rgba(251,79,7,0.08)",border:"1px solid rgba(251,79,7,0.2)",color:"#fb4f07",padding:"4px 12px",borderRadius:16,cursor:"pointer",fontSize:11,fontWeight:700}}>
+            {ar?"EN":"عربي"}
           </button>
-        ))}
+          <button onClick={handleLogout} style={{background:"#111",border:"1px solid #1e1e1e",color:"#555",padding:"4px 12px",borderRadius:8,cursor:"pointer",fontSize:11}}>
+            {ar?"خروج":"Logout"}
+          </button>
+        </div>
       </div>
-      <div style={{height:90}}/>
+      {/* Staff app content (no login screen needed) */}
+      <StaffApp lang={lang} setLang={setLang} alreadyUnlocked staffInfo={staffInfo} onLogout={handleLogout}/>
     </div>
   );
 }
