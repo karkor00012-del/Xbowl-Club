@@ -58,46 +58,88 @@ function QRCode({value,size=120}){ return <div style={{background:"#fff",padding
 function ProgressRing({stamps,goal,size=90}){ const r=(size-10)/2,circ=2*Math.PI*r; const [a,setA]=useState(0); useEffect(()=>{setTimeout(()=>setA(Math.min(stamps/goal,1)),100);},[stamps]); return <svg width={size} height={size} style={{transform:"rotate(-90deg)"}}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={5}/><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="url(#og)" strokeWidth={5} strokeDasharray={circ} strokeDashoffset={circ*(1-a)} strokeLinecap="round" style={{transition:"stroke-dashoffset 1.2s cubic-bezier(0.4,0,0.2,1)"}}/><defs><linearGradient id="og" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#fb4f07"/><stop offset="100%" stopColor="#ff8c00"/></linearGradient></defs></svg>; }
 
 // ── STAFF LOGIN ─────────────────────────────────────────────────
-function LoginGate({onUnlock,onBack,lang="ar"}){
-  const [email,setEmail]=useState(""),  [pw,setPw]=useState(""), [err,setErr]=useState(""), [loading,setLoading]=useState(false);
+function LoginGate({onUnlock,onBack,lang="ar",isManager=false}){
+  const [email,setEmail]=useState(isManager?"manager@xbowl.com":""),
+        [pw,setPw]=useState(""), [err,setErr]=useState(""), [loading,setLoading]=useState(false);
   const ar=lang==="ar";
   async function doLogin(){
     if(!email.trim()||!pw.trim()){setErr(ar?"أدخل البيانات":"Enter credentials");return;}
     setLoading(true); setErr("");
     try{
       const s=await sb.loginStaff(email.trim().toLowerCase(),pw.trim());
-      if(s){ try{localStorage.setItem("xbowl_staff_session",JSON.stringify(s));}catch(e){} onUnlock(s); }
-      else setErr(ar?"بيانات خاطئة":"Wrong credentials");
+      if(s){ onUnlock(s); }
+      else setErr(ar?"إيميل أو كلمة مرور خاطئة":"Wrong email or password");
     }catch(e){setErr(ar?"خطأ في الاتصال":"Connection error");}
     setLoading(false);
   }
   return (
-    <div style={{minHeight:"100vh",background:"#060606",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:"#0f0f0f",border:"1px solid #1e1e1e",borderRadius:24,width:"100%",maxWidth:380,overflow:"hidden"}}>
-        <div style={{background:"linear-gradient(135deg,#fb4f07,#c93d00)",padding:"28px 24px 22px",textAlign:"center"}}>
-          <div style={{fontSize:44,marginBottom:10}}>🎳</div>
-          <div style={{fontSize:20,fontWeight:900,color:"#fff",letterSpacing:2}}>XBOWL STAFF</div>
-          <div style={{fontSize:12,color:"rgba(255,255,255,0.7)",marginTop:4}}>{ar?"تسجيل دخول الموظف":"Staff Login"}</div>
+    <div style={{minHeight:"100vh",background:"#060606",display:"flex",alignItems:"center",justifyContent:"center",padding:20,backgroundImage:isManager?"radial-gradient(ellipse 60% 40% at 50% 0%,rgba(255,215,0,0.08) 0%,transparent 70%)":"radial-gradient(ellipse 60% 40% at 50% 0%,rgba(251,79,7,0.1) 0%,transparent 70%)"}}>
+      <div style={{background:"#0f0f0f",border:"1px solid "+(isManager?"rgba(255,215,0,0.2)":"rgba(251,79,7,0.2)"),borderRadius:24,width:"100%",maxWidth:400,overflow:"hidden",boxShadow:"0 40px 80px rgba(0,0,0,0.6)"}}>
+        {/* Header */}
+        <div style={{background:isManager?"linear-gradient(135deg,#b8860b,#8b6914)":"linear-gradient(135deg,#fb4f07,#c93d00)",padding:"32px 24px 26px",textAlign:"center",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:-30,right:-30,width:120,height:120,borderRadius:"50%",background:"rgba(255,255,255,0.05)",pointerEvents:"none"}}/>
+          <div style={{fontSize:50,marginBottom:10}}>{isManager?"👑":"🔧"}</div>
+          <div style={{fontSize:22,fontWeight:900,color:"#fff",letterSpacing:2,marginBottom:4}}>
+            {isManager?(ar?"بوابة المدير":"Manager Portal"):(ar?"بوابة الموظف":"Staff Portal")}
+          </div>
+          <div style={{fontSize:12,color:"rgba(255,255,255,0.65)"}}>XBOWL LOYALTY SYSTEM</div>
         </div>
-        <div style={{padding:"24px 22px 28px"}}>
+
+        <div style={{padding:"26px 24px 28px"}}>
+          {/* Hint box */}
+          <div style={{background:isManager?"rgba(255,215,0,0.05)":"rgba(251,79,7,0.05)",border:"1px solid "+(isManager?"rgba(255,215,0,0.15)":"rgba(251,79,7,0.15)"),borderRadius:12,padding:"12px 16px",marginBottom:20,direction:"ltr"}}>
+            <div style={{fontSize:10,color:isManager?"#ffd700":"#fb4f07",letterSpacing:2,marginBottom:6,fontWeight:700}}>{isManager?"MANAGER CREDENTIALS":"STAFF CREDENTIALS"}</div>
+            <div style={{fontSize:12,color:"#888",fontFamily:"monospace"}}>
+              <span style={{color:"#555"}}>Email: </span><span style={{color:"#ddd"}}>{isManager?"manager@xbowl.com":"staff@xbowl.com"}</span>
+            </div>
+            <div style={{fontSize:12,color:"#888",fontFamily:"monospace",marginTop:3}}>
+              <span style={{color:"#555"}}>Pass: </span><span style={{color:"#ddd"}}>{isManager?"xbowl_manager":"xbowl2024"}</span>
+            </div>
+          </div>
+
+          {/* Email */}
           <div style={{marginBottom:14}}>
             <label style={{display:"block",fontSize:10,color:"#555",letterSpacing:2,marginBottom:8}}>{ar?"الإيميل":"EMAIL"}</label>
-            <input value={email} onChange={e=>{setEmail(e.target.value);setErr("");}} placeholder="staff@xbowl.com" type="email" onKeyDown={e=>e.key==="Enter"&&doLogin()}
-              style={{width:"100%",background:"#111",border:"1px solid #1e1e1e",borderRadius:12,color:"#fff",padding:"14px 16px",fontSize:15,outline:"none",boxSizing:"border-box",direction:"ltr"}}
-              onFocus={e=>e.target.style.borderColor="rgba(251,79,7,0.5)"} onBlur={e=>e.target.style.borderColor="#1e1e1e"}/>
+            <input value={email} onChange={e=>{setEmail(e.target.value);setErr("");}} placeholder={isManager?"manager@xbowl.com":"staff@xbowl.com"} type="email" onKeyDown={e=>e.key==="Enter"&&doLogin()}
+              style={{width:"100%",background:"#111",border:"1px solid "+(err?"#ff4444":"#1e1e1e"),borderRadius:12,color:"#fff",padding:"14px 16px",fontSize:15,outline:"none",boxSizing:"border-box",direction:"ltr"}}
+              onFocus={e=>e.target.style.borderColor=isManager?"rgba(255,215,0,0.5)":"rgba(251,79,7,0.5)"} onBlur={e=>e.target.style.borderColor=err?"#ff4444":"#1e1e1e"}/>
           </div>
+
+          {/* Password */}
           <div style={{marginBottom:20}}>
             <label style={{display:"block",fontSize:10,color:"#555",letterSpacing:2,marginBottom:8}}>{ar?"كلمة المرور":"PASSWORD"}</label>
             <input value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} placeholder="••••••••" type="password" onKeyDown={e=>e.key==="Enter"&&doLogin()}
-              style={{width:"100%",background:"#111",border:"1px solid #1e1e1e",borderRadius:12,color:"#fff",padding:"14px 16px",fontSize:15,outline:"none",boxSizing:"border-box",direction:"ltr"}}
-              onFocus={e=>e.target.style.borderColor="rgba(251,79,7,0.5)"} onBlur={e=>e.target.style.borderColor="#1e1e1e"}/>
+              style={{width:"100%",background:"#111",border:"1px solid "+(err?"#ff4444":"#1e1e1e"),borderRadius:12,color:"#fff",padding:"14px 16px",fontSize:15,outline:"none",boxSizing:"border-box",direction:"ltr"}}
+              onFocus={e=>e.target.style.borderColor=isManager?"rgba(255,215,0,0.5)":"rgba(251,79,7,0.5)"} onBlur={e=>e.target.style.borderColor=err?"#ff4444":"#1e1e1e"}/>
           </div>
-          {err&&<div style={{color:"#ff5555",fontSize:13,marginBottom:14,textAlign:"center",padding:"8px 12px",background:"rgba(255,85,85,0.08)",borderRadius:8}}>⚠ {err}</div>}
-          <button onClick={doLogin} disabled={loading} style={{width:"100%",padding:"15px",background:loading?"#1a1a1a":"linear-gradient(135deg,#fb4f07,#c93d00)",border:"none",borderRadius:14,color:"#fff",fontWeight:900,fontSize:15,cursor:loading?"not-allowed":"pointer",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-            {loading?<><div style={{width:18,height:18,border:"2px solid #333",borderTop:"2px solid #fb4f07",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>{ar?"جاري التحقق...":"Verifying..."}</>:<>{ar?"تسجيل الدخول":"Sign In"} 🔐</>}
+
+          {err&&<div style={{color:"#ff5555",fontSize:13,marginBottom:14,textAlign:"center",padding:"8px 12px",background:"rgba(255,85,85,0.08)",borderRadius:8,border:"1px solid rgba(255,85,85,0.2)"}}>⚠ {err}</div>}
+
+          {/* Login button */}
+          <button onClick={doLogin} disabled={loading} style={{
+            width:"100%",padding:"15px",
+            background:loading?"#1a1a1a":isManager?"linear-gradient(135deg,#ffd700,#b8860b)":"linear-gradient(135deg,#fb4f07,#c93d00)",
+            border:"none",borderRadius:14,
+            color:isManager&&!loading?"#000":"#fff",
+            fontWeight:900,fontSize:15,cursor:loading?"not-allowed":"pointer",
+            boxShadow:loading?"none":isManager?"0 8px 24px rgba(255,215,0,0.3)":"0 8px 24px rgba(251,79,7,0.4)",
+            marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+          }}>
+            {loading
+              ?<><div style={{width:18,height:18,border:"2px solid #333",borderTop:"2px solid #fb4f07",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>{ar?"جاري التحقق...":"Verifying..."}</>
+              :<>{isManager?"👑":"🔧"} {ar?"تسجيل الدخول":"Sign In"}</>
+            }
           </button>
-          <button onClick={onBack} style={{width:"100%",padding:"13px",background:"#1a1a1a",border:"2px solid #333",borderRadius:14,color:"#ccc",fontWeight:700,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-            ← {ar?"رجوع للموقع":"Back to Site"}
+
+          {/* Back button */}
+          <button onClick={onBack} style={{
+            width:"100%",padding:"13px",
+            background:"#111",border:"2px solid #222",
+            borderRadius:14,color:"#888",
+            fontWeight:700,fontSize:14,cursor:"pointer",
+            display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+          }}>
+            ← {ar?"العودة للموقع الرئيسي":"Back to Main Site"}
           </button>
         </div>
       </div>
@@ -767,7 +809,7 @@ function Portal({route,lang,setLang}){
   }
   function handleLogout(){ try{localStorage.removeItem("xbowl_staff_session");}catch(e){} setStaffInfo(null); setUnlocked(false); }
 
-  if(!unlocked) return <LoginGate lang={lang} onUnlock={handleUnlock} onBack={()=>window.location.href="/"}/>;
+  if(!unlocked) return <LoginGate lang={lang} onUnlock={handleUnlock} onBack={()=>window.location.href="/"} isManager={route==="/manager"}/>;
 
   if(route==="/manager") return <ManagerApp lang={lang} setLang={setLang} staffInfo={staffInfo} onLogout={handleLogout}/>;
   return <StaffApp lang={lang} setLang={setLang} staffInfo={staffInfo} onLogout={handleLogout}/>;
