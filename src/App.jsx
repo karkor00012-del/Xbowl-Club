@@ -297,15 +297,34 @@ function Spinner() {
 // ══════════════════════════════════════════════════════════════
 function CustomerApp({lang,setLang,desktopMode=false}) {
   const [screen,setScreen]=useState(()=>{
-    try{ return sessionStorage.getItem("xb_cust_screen")||"home"; } catch(e){ return "home"; }
+    try{
+      const saved=localStorage.getItem("xb_cust_screen");
+      const cust=localStorage.getItem("xb_cust_data");
+      // Only restore card screen if we have customer data
+      if(saved==="card"&&cust) return "card";
+      return "home";
+    } catch(e){ return "home"; }
   });
   const [phone,setPhone]=useState("");
   const [customer,setCustomer]=useState(()=>{
     try{
-      const s=sessionStorage.getItem("xb_cust_data");
-      return s?JSON.parse(s):null;
+      const s=localStorage.getItem("xb_cust_data");
+      if(s) return JSON.parse(s);
+      return null;
     } catch(e){ return null; }
   });
+
+  // Refresh customer data from DB on mount if logged in
+  useEffect(()=>{
+    if(customer&&customer.id){
+      sb.getCustomerById(customer.id).then(fresh=>{
+        if(fresh){
+          setCustomer(fresh);
+          try{ localStorage.setItem("xb_cust_data",JSON.stringify(fresh)); } catch(e){}
+        }
+      }).catch(()=>{});
+    }
+  },[]);
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(false);
   const [regForm,setRegForm]=useState({name:"",phone:""});
@@ -342,7 +361,7 @@ function CustomerApp({lang,setLang,desktopMode=false}) {
       const created=await sb.createCustomer(nc);
       const finalC=created||nc;
       setCustomer(finalC); setJustReg(true); setScreen("card");
-      try{ sessionStorage.setItem("xb_cust_data",JSON.stringify(finalC)); sessionStorage.setItem("xb_cust_screen","card"); } catch(e){}
+      try{ localStorage.setItem("xb_cust_data",JSON.stringify(finalC)); localStorage.setItem("xb_cust_screen","card"); } catch(e){}
     } catch(e){ setRegErr({phone:ar?"الرقم مسجل مسبقاً":"Phone already registered"}); }
     setLoading(false);
   }
@@ -560,10 +579,10 @@ function CustomerApp({lang,setLang,desktopMode=false}) {
 // ══════════════════════════════════════════════════════════════
 // STAFF APP — PIN PROTECTED
 // ══════════════════════════════════════════════════════════════
-function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false}) {
+function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false,onCancelPin=null}) {
   const [unlocked,setUnlocked]=useState(()=>{
     if(alreadyUnlocked) return true;
-    try{ return sessionStorage.getItem("xbowl_staff_unlocked")==="1"; } catch(e){ return false; }
+    try{ return localStorage.getItem("xbowl_staff_unlocked")==="1"; } catch(e){ return false; }
   });
   const [tab,setTab]=useState("scan");
   const [showScanner,setShowScanner]=useState(false);
@@ -949,16 +968,16 @@ const STAFF_SESSION_KEY = "xbowl_staff_unlocked";
 
 function DesktopLayout({lang,setLang}) {
   // Persist staff login in sessionStorage (stays until tab is closed)
-  const [staffUnlocked,setStaffUnlocked]=useState(()=>sessionStorage.getItem(STAFF_SESSION_KEY)==="1");
+  const [staffUnlocked,setStaffUnlocked]=useState(()=>localStorage.getItem(STAFF_SESSION_KEY)==="1");
   const [showPin,setShowPin]=useState(false);
   const ar=lang==="ar";
 
   function unlock(){
-    sessionStorage.setItem(STAFF_SESSION_KEY,"1");
+    localStorage.setItem(STAFF_SESSION_KEY,"1");
     setStaffUnlocked(true); setShowPin(false);
   }
   function logout(){
-    sessionStorage.removeItem(STAFF_SESSION_KEY);
+    localStorage.removeItem(STAFF_SESSION_KEY);
     setStaffUnlocked(false);
   }
 
@@ -1035,7 +1054,7 @@ export default function App() {
     <div>
       {mode==="customer"
         ?<CustomerApp lang={lang} setLang={setLang}/>
-        :<StaffApp lang={lang} setLang={setLang}/>
+        :<StaffApp lang={lang} setLang={setLang} onCancelPin={()=>setMode("customer")}/>
       }
       {/* Mobile bottom tabs */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"rgba(6,6,6,0.98)",borderTop:"1px solid rgba(255,255,255,0.06)",padding:"8px 16px 20px",display:"flex",gap:8,zIndex:200,backdropFilter:"blur(24px)"}}>
