@@ -383,6 +383,10 @@ function StaffApp({lang,setLang,staffInfo,onLogout}){
   const [customers,setCustomers]=useState([]), [rewards,setRewards]=useState([]), [loading,setLoading]=useState(false);
   const [loyalFilter,setLoyalFilter]=useState("all");
   const [confirmDelete,setConfirmDelete]=useState(null), [editCustomer,setEditCustomer]=useState(null);
+  
+  // تـم الإصـلاح: تـعـريـف الـ State الـنـاقـص هـنـا لـمـنـع الـ ReferenceError
+  const [showPwManager, setShowPwManager] = useState(false);
+
   const ar=lang==="ar";
   const safeC=Array.isArray(customers)?customers:[];
 
@@ -467,11 +471,20 @@ function StaffApp({lang,setLang,staffInfo,onLogout}){
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <div style={{background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:16,padding:"3px 10px",fontSize:10,color:"#22c55e",fontWeight:700}}>✓ {staffInfo?.name||"Staff"}</div>
           <button onClick={()=>setLang(ar?"en":"ar")} style={{background:"rgba(251,79,7,0.08)",border:"1px solid rgba(251,79,7,0.2)",color:"#fb4f07",padding:"4px 10px",borderRadius:14,cursor:"pointer",fontSize:11,fontWeight:700}}>{ar?"EN":"عربي"}</button>
-          <button onClick={()=>setShowPwManager(true)} style={{background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.2)",color:"#ffd700",padding:"4px 10px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700}}>🔑 {ar?"كلمات المرور":"Passwords"}</button>
+          
+          {/* تـم الـتـعـديـل: الـزر يـظـهـر فـقـط إذا كـان الـمـسـتـخـدم مـديـراً (manager) */}
+          {staffInfo?.role === "manager" && (
+            <button onClick={()=>setShowPwManager(true)} style={{background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.2)",color:"#ffd700",padding:"4px 10px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700}}>🔑 {ar?"كلمات المرور":"Passwords"}</button>
+          )}
+          
           <button onClick={onLogout} style={{background:"#111",border:"1px solid #1e1e1e",color:"#555",padding:"4px 10px",borderRadius:8,cursor:"pointer",fontSize:11}}>{ar?"خروج":"Logout"}</button>
         </div>
       </div>
-      {showPwManager&&<PasswordManager staffInfo={staffInfo} lang={lang} onClose={()=>setShowPwManager(false)}/>}
+      
+      {/* تـم الـتـعـديـل: حـمـايـة إضافـيـة لـمـكـوّن إدارة كـلـمـات الـمـرور */}
+      {showPwManager && staffInfo?.role === "manager" && (
+        <PasswordManager staffInfo={staffInfo} lang={lang} onClose={()=>setShowPwManager(false)}/>
+      )}
 
       {/* Tabs */}
       <div style={{display:"flex",background:"#060606",borderBottom:"1px solid rgba(255,255,255,0.04)",position:"sticky",top:0,zIndex:9}}>
@@ -498,7 +511,7 @@ function StaffApp({lang,setLang,staffInfo,onLogout}){
             <span style={{fontSize:22}}>📷</span>{ar?"مسح QR بطاقة الزبون":"Scan Customer QR Card"}
           </button>
           <div style={{background:"#0a0a0a",border:"1px solid #0f0f0f",borderRadius:14,padding:"16px",marginBottom:14}}>
-            <div style={{fontSize:10,color:"#444",letterSpacing:2,marginBottom:10}}>{ar?"إدخال يدوي":"MANUAL"}</div>
+            <div style={{fontSize:10,color:"#444",letterSpacing:2,marginBottom:10}}>{ar?"إدخل يدوي":"MANUAL"}</div>
             <div style={{display:"flex",gap:8}}>
               <input value={scanInput} onChange={e=>{setScanInput(e.target.value.toUpperCase());setScanErr("");setScanResult(null);}} placeholder="XB001" onKeyDown={e=>e.key==="Enter"&&handleScan(scanInput)}
                 style={{flex:1,background:"#111",border:"1px solid #1a1a1a",borderRadius:10,color:"#fff",padding:"11px 14px",fontSize:16,outline:"none",fontFamily:"monospace",letterSpacing:3}}
@@ -659,9 +672,7 @@ function PasswordManager({staffInfo,lang,onClose}){
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// MANAGER APP — analytics + export
-// ══════════════════════════════════════════════════════════════
+// ── MANAGER APP — analytics + export ───────────────────────────
 function ManagerApp({lang,setLang,staffInfo,onLogout}){
   const [customers,setCustomers]=useState([]), [rewards,setRewards]=useState([]), [loading,setLoading]=useState(true);
   const [exportFilter,setExportFilter]=useState("all"), [copied,setCopied]=useState(false), [showExport,setShowExport]=useState(false);
@@ -733,9 +744,14 @@ function ManagerApp({lang,setLang,staffInfo,onLogout}){
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <div style={{background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.2)",borderRadius:16,padding:"3px 10px",fontSize:10,color:"#ffd700",fontWeight:700}}>👑 {staffInfo?.name||"Manager"}</div>
           <button onClick={()=>setLang(ar?"en":"ar")} style={{background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.2)",color:"#ffd700",padding:"4px 10px",borderRadius:14,cursor:"pointer",fontSize:11,fontWeight:700}}>{ar?"EN":"عربي"}</button>
+          
+          {/* زر إضافي للمدير في لوحته الخاصة للوصول المباشر لإدارة كلمات المرور */}
+          <button onClick={()=>setShowPwManager(true)} style={{background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.2)",color:"#ffd700",padding:"4px 10px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700}}>🔑 {ar?"كلمات المرور":"Passwords"}</button>
+          
           <button onClick={onLogout} style={{background:"#111",border:"1px solid #1e1e1e",color:"#555",padding:"4px 10px",borderRadius:8,cursor:"pointer",fontSize:11}}>{ar?"خروج":"Logout"}</button>
         </div>
       </div>
+      {showPwManager&&<PasswordManager staffInfo={staffInfo} lang={lang} onClose={()=>setShowPwManager(false)}/>}
 
       <div style={{maxWidth:900,margin:"0 auto",padding:"22px 16px"}}>
         {loading?<Spinner/>:(<>
@@ -843,7 +859,7 @@ function ManagerApp({lang,setLang,staffInfo,onLogout}){
               </div>
               <textarea value={wMsg} onChange={e=>setWMsg(e.target.value)} rows={4} style={{width:"100%",background:"#111",border:"1px solid #1e1e1e",borderRadius:10,color:"#ddd",padding:"12px 14px",fontSize:13,outline:"none",resize:"vertical",lineHeight:1.6,boxSizing:"border-box",direction:"rtl",fontFamily:"inherit",marginBottom:12}}
                 onFocus={e=>e.target.style.borderColor="#25d366"} onBlur={e=>e.target.style.borderColor="#1e1e1e"}/>
-              <button onClick={()=>wRcpts.length>0&&setWStep("confirm")} style={{width:"100%",padding:"13px",background:wRcpts.length>0?"linear-gradient(135deg,#25d366,#128c7e)":"#111",border:"none",borderRadius:12,color:wRcpts.length>0?"#fff":"#333",fontWeight:800,fontSize:14,cursor:wRcpts.length>0?"pointer":"not-allowed",marginBottom:10}}>
+              <button onClick={()=>wRcpts.length>0&&setWStep("confirm")} style={{width:"100%",padding:"13px",background:wRcpts.length>0?"linear-gradient(135deg,#25d366,#128c7e)":"#111",border:"none",borderRadius:12,color:wRcpts.length>0?"#fff":"#333",fontWeight:800,fontSize:14,cursor:"pointer",marginBottom:10}}>
                 💬 {ar?"إرسال بث واتساب لـ":"Send WhatsApp to"} {wRcpts.length}
               </button>
               <div style={{display:"flex",gap:8}}>
