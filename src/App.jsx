@@ -565,6 +565,8 @@ function StaffApp({lang,setLang,desktopMode=false,alreadyUnlocked=false}) {
   const [loyalFilter,setLoyalFilter]=useState("all");
   const [exportFilter,setExportFilter]=useState("all");
   const [copied,setCopied]=useState(false);
+  const [confirmDelete,setConfirmDelete]=useState(null);
+  const [editCustomer,setEditCustomer]=useState(null);
   const ar=lang==="ar";
 
   useEffect(()=>{ if(unlocked) loadData(); },[unlocked]);
