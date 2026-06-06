@@ -32,6 +32,8 @@ const sb = {
   async getRewards()         { return await sb.query("rewards","GET",null,"?select=*&order=redeemed_at.desc")||[]; },
   async addReward(r)         { return await sb.query("rewards","POST",r); },
   async loginStaff(email,pw) { return (await sb.query("staff","GET",null,`?email=eq.${encodeURIComponent(email)}&password_hash=eq.${encodeURIComponent(pw)}&select=*`)||[])[0]||null; },
+  async getAllStaff() { return await sb.query("staff","GET",null,"?select=id,email,name,role&order=role.asc")||[]; },
+  async updatePassword(id,newPw) { return await sb.query("staff","PATCH",{password_hash:newPw},`?id=eq.${id}`); },
 };
 
 // ── HELPERS ────────────────────────────────────────────────────
@@ -59,7 +61,7 @@ function ProgressRing({stamps,goal,size=90}){ const r=(size-10)/2,circ=2*Math.PI
 
 // ── STAFF LOGIN ─────────────────────────────────────────────────
 function LoginGate({onUnlock,onBack,lang="ar",isManager=false}){
-  const [email,setEmail]=useState(isManager?"manager@xbowl.com":""),
+  const [email,setEmail]=useState(""),
         [pw,setPw]=useState(""), [err,setErr]=useState(""), [loading,setLoading]=useState(false);
   const ar=lang==="ar";
   async function doLogin(){
@@ -67,8 +69,10 @@ function LoginGate({onUnlock,onBack,lang="ar",isManager=false}){
     setLoading(true); setErr("");
     try{
       const s=await sb.loginStaff(email.trim().toLowerCase(),pw.trim());
-      if(s){ onUnlock(s); }
-      else setErr(ar?"إيميل أو كلمة مرور خاطئة":"Wrong email or password");
+      if(s){
+        if(isManager&&s.role!=="manager"){setErr(ar?"هذا الحساب ليس لديه صلاحية المدير":"No manager access");setLoading(false);return;}
+        onUnlock(s);
+      } else setErr(ar?"إيميل أو كلمة مرور خاطئة":"Wrong email or password");
     }catch(e){setErr(ar?"خطأ في الاتصال":"Connection error");}
     setLoading(false);
   }
@@ -86,17 +90,6 @@ function LoginGate({onUnlock,onBack,lang="ar",isManager=false}){
         </div>
 
         <div style={{padding:"26px 24px 28px"}}>
-          {/* Hint box */}
-          <div style={{background:isManager?"rgba(255,215,0,0.05)":"rgba(251,79,7,0.05)",border:"1px solid "+(isManager?"rgba(255,215,0,0.15)":"rgba(251,79,7,0.15)"),borderRadius:12,padding:"12px 16px",marginBottom:20,direction:"ltr"}}>
-            <div style={{fontSize:10,color:isManager?"#ffd700":"#fb4f07",letterSpacing:2,marginBottom:6,fontWeight:700}}>{isManager?"MANAGER CREDENTIALS":"STAFF CREDENTIALS"}</div>
-            <div style={{fontSize:12,color:"#888",fontFamily:"monospace"}}>
-              <span style={{color:"#555"}}>Email: </span><span style={{color:"#ddd"}}>{isManager?"manager@xbowl.com":"staff@xbowl.com"}</span>
-            </div>
-            <div style={{fontSize:12,color:"#888",fontFamily:"monospace",marginTop:3}}>
-              <span style={{color:"#555"}}>Pass: </span><span style={{color:"#ddd"}}>{isManager?"xbowl_manager":"xbowl2024"}</span>
-            </div>
-          </div>
-
           {/* Email */}
           <div style={{marginBottom:14}}>
             <label style={{display:"block",fontSize:10,color:"#555",letterSpacing:2,marginBottom:8}}>{ar?"الإيميل":"EMAIL"}</label>
@@ -474,9 +467,11 @@ function StaffApp({lang,setLang,staffInfo,onLogout}){
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <div style={{background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:16,padding:"3px 10px",fontSize:10,color:"#22c55e",fontWeight:700}}>✓ {staffInfo?.name||"Staff"}</div>
           <button onClick={()=>setLang(ar?"en":"ar")} style={{background:"rgba(251,79,7,0.08)",border:"1px solid rgba(251,79,7,0.2)",color:"#fb4f07",padding:"4px 10px",borderRadius:14,cursor:"pointer",fontSize:11,fontWeight:700}}>{ar?"EN":"عربي"}</button>
+          <button onClick={()=>setShowPwManager(true)} style={{background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.2)",color:"#ffd700",padding:"4px 10px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700}}>🔑 {ar?"كلمات المرور":"Passwords"}</button>
           <button onClick={onLogout} style={{background:"#111",border:"1px solid #1e1e1e",color:"#555",padding:"4px 10px",borderRadius:8,cursor:"pointer",fontSize:11}}>{ar?"خروج":"Logout"}</button>
         </div>
       </div>
+      {showPwManager&&<PasswordManager staffInfo={staffInfo} lang={lang} onClose={()=>setShowPwManager(false)}/>}
 
       {/* Tabs */}
       <div style={{display:"flex",background:"#060606",borderBottom:"1px solid rgba(255,255,255,0.04)",position:"sticky",top:0,zIndex:9}}>
@@ -570,12 +565,107 @@ function StaffApp({lang,setLang,staffInfo,onLogout}){
   );
 }
 
+
+// ── PASSWORD MANAGER (manager only) ────────────────────────────
+function PasswordManager({staffInfo,lang,onClose}){
+  const [accounts,setAccounts]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [editing,setEditing]=useState(null); // {id,name,email}
+  const [newPw,setNewPw]=useState("");
+  const [confirm,setConfirm]=useState("");
+  const [err,setErr]=useState("");
+  const [success,setSuccess]=useState("");
+  const ar=lang==="ar";
+
+  useEffect(()=>{
+    sb.getAllStaff().then(s=>{ setAccounts(s||[]); setLoading(false); });
+  },[]);
+
+  async function savePassword(){
+    if(newPw.length<6){setErr(ar?"كلمة المرور يجب أن تكون ٦ أحرف على الأقل":"Minimum 6 characters");return;}
+    if(newPw!==confirm){setErr(ar?"كلمتا المرور غير متطابقتين":"Passwords don't match");return;}
+    setErr(""); setLoading(true);
+    try{
+      await sb.updatePassword(editing.id,newPw);
+      setSuccess(ar?`تم تغيير كلمة مرور ${editing.name} بنجاح ✓`:`Password changed for ${editing.name} ✓`);
+      setTimeout(()=>{ setSuccess(""); setEditing(null); setNewPw(""); setConfirm(""); },2000);
+    }catch(e){setErr(ar?"حدث خطأ":"Error occurred");}
+    setLoading(false);
+  }
+
+  return (
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,zIndex:400,background:"rgba(0,0,0,0.92)",backdropFilter:"blur(12px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"#0f0f0f",border:"1px solid rgba(255,215,0,0.2)",borderRadius:22,width:"100%",maxWidth:440,overflow:"hidden",boxShadow:"0 40px 80px rgba(0,0,0,0.7)"}}>
+        <div style={{background:"linear-gradient(135deg,#b8860b,#8b6914)",padding:"20px 22px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div>
+            <div style={{fontWeight:900,fontSize:16,color:"#fff"}}>🔑 {ar?"إدارة كلمات المرور":"Password Management"}</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,0.65)",marginTop:2}}>{ar?"للمدير فقط":"Manager only"}</div>
+          </div>
+          <button onClick={onClose} style={{background:"rgba(0,0,0,0.25)",border:"none",color:"#fff",width:30,height:30,borderRadius:"50%",fontSize:15,cursor:"pointer"}}>✕</button>
+        </div>
+        <div style={{padding:"20px"}}>
+          {loading&&!editing&&<div style={{textAlign:"center",padding:20,color:"#555"}}>{ar?"جاري التحميل...":"Loading..."}</div>}
+
+          {!editing&&!loading&&(
+            <div>
+              <div style={{fontSize:10,color:"#555",letterSpacing:2,marginBottom:14}}>{ar?"الحسابات المتاحة":"ACCOUNTS"}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {accounts.map(a=>(
+                  <div key={a.id} style={{display:"flex",alignItems:"center",gap:12,background:"#111",borderRadius:14,padding:"14px 16px",border:"1px solid #1a1a1a"}}>
+                    <div style={{fontSize:22}}>{a.role==="manager"?"👑":"🔧"}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:700,color:"#fff",fontSize:14}}>{a.name}</div>
+                      <div style={{fontSize:11,color:"#555",direction:"ltr",textAlign:"left"}}>{a.email}</div>
+                    </div>
+                    <button
+                      onClick={()=>{setEditing(a);setNewPw("");setConfirm("");setErr("");setSuccess("");}}
+                      style={{background:a.role==="manager"?"rgba(255,215,0,0.1)":"rgba(251,79,7,0.1)",border:"1px solid "+(a.role==="manager"?"rgba(255,215,0,0.2)":"rgba(251,79,7,0.2)"),color:a.role==="manager"?"#ffd700":"#fb4f07",padding:"6px 14px",borderRadius:10,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      {ar?"تغيير":"Change"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {editing&&(
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18}}>
+                <button onClick={()=>{setEditing(null);setNewPw("");setConfirm("");setErr("");}} style={{background:"#111",border:"1px solid #1e1e1e",color:"#666",padding:"5px 12px",borderRadius:8,fontSize:12,cursor:"pointer"}}>← {ar?"رجوع":"Back"}</button>
+                <div style={{fontWeight:700,color:"#fff",fontSize:14}}>{editing.name}</div>
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={{display:"block",fontSize:10,color:"#555",letterSpacing:2,marginBottom:8}}>{ar?"كلمة المرور الجديدة":"NEW PASSWORD"}</label>
+                <input value={newPw} onChange={e=>{setNewPw(e.target.value);setErr("");}} type="password" placeholder="••••••••"
+                  style={{width:"100%",background:"#111",border:"1px solid "+(err?"#ff4444":"#1e1e1e"),borderRadius:12,color:"#fff",padding:"13px 15px",fontSize:15,outline:"none",boxSizing:"border-box",direction:"ltr"}}
+                  onFocus={e=>e.target.style.borderColor="rgba(255,215,0,0.5)"} onBlur={e=>e.target.style.borderColor=err?"#ff4444":"#1e1e1e"}/>
+              </div>
+              <div style={{marginBottom:18}}>
+                <label style={{display:"block",fontSize:10,color:"#555",letterSpacing:2,marginBottom:8}}>{ar?"تأكيد كلمة المرور":"CONFIRM PASSWORD"}</label>
+                <input value={confirm} onChange={e=>{setConfirm(e.target.value);setErr("");}} type="password" placeholder="••••••••"
+                  style={{width:"100%",background:"#111",border:"1px solid "+(err?"#ff4444":"#1e1e1e"),borderRadius:12,color:"#fff",padding:"13px 15px",fontSize:15,outline:"none",boxSizing:"border-box",direction:"ltr"}}
+                  onFocus={e=>e.target.style.borderColor="rgba(255,215,0,0.5)"} onBlur={e=>e.target.style.borderColor=err?"#ff4444":"#1e1e1e"}/>
+              </div>
+              {err&&<div style={{color:"#ff5555",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(255,85,85,0.08)",borderRadius:8}}>⚠ {err}</div>}
+              {success&&<div style={{color:"#22c55e",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(34,197,94,0.08)",borderRadius:8}}>✓ {success}</div>}
+              <button onClick={savePassword} disabled={loading||!newPw||!confirm} style={{width:"100%",padding:"13px",background:loading||!newPw||!confirm?"#111":"linear-gradient(135deg,#ffd700,#b8860b)",border:"none",borderRadius:12,color:loading||!newPw||!confirm?"#333":"#000",fontWeight:800,fontSize:14,cursor:loading||!newPw||!confirm?"not-allowed":"pointer"}}>
+                {loading?ar?"جاري الحفظ...":"Saving...":(ar?"حفظ كلمة المرور":"Save Password")} 🔑
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════
 // MANAGER APP — analytics + export
 // ══════════════════════════════════════════════════════════════
 function ManagerApp({lang,setLang,staffInfo,onLogout}){
   const [customers,setCustomers]=useState([]), [rewards,setRewards]=useState([]), [loading,setLoading]=useState(true);
   const [exportFilter,setExportFilter]=useState("all"), [copied,setCopied]=useState(false), [showExport,setShowExport]=useState(false);
+  const [showPwManager,setShowPwManager]=useState(false);
   const ar=lang==="ar";
 
   useEffect(()=>{ loadData(); },[]);
