@@ -5,7 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 const SUPABASE_URL = "https://ooaqtwjqyiasqxuofaia.supabase.co";
 const SUPABASE_KEY = "sb_publishable_jCB5RCh6cXRMWqkXmjC2PQ_Ew6A4kwI";
 const STAMP_GOAL  = 5;
-const MANAGER_PIN = "1234";
+const MANAGER_PIN = "2030";
 
 // ── SUPABASE CLIENT ────────────────────────────────────────────
 const sb = {
@@ -143,7 +143,7 @@ function PinGate({onUnlock,onClose,lang="ar"}) {
     <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,zIndex:400,background:"rgba(0,0,0,0.95)",backdropFilter:"blur(20px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{background:"#0f0f0f",border:"1px solid #222",borderRadius:24,padding:"36px 28px 28px",width:"100%",maxWidth:320,textAlign:"center",position:"relative"}}>
         {/* Close X button — always visible */}
-        <button onClick={onClose} style={{position:"absolute",top:16,left:16,background:"rgba(255,255,255,0.07)",border:"none",color:"#888",width:32,height:32,borderRadius:"50%",fontSize:17,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>
+        <button onClick={onClose} style={{position:"absolute",top:16,insetInlineStart:"auto",insetInlineEnd:"auto",right:"auto",left:16,background:"rgba(255,255,255,0.1)",border:"1px solid #333",color:"#ccc",width:36,height:36,borderRadius:"50%",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:10}}>✕</button>
         <div style={{width:60,height:60,borderRadius:"50%",background:"linear-gradient(135deg,#fb4f07,#c93d00)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 16px",boxShadow:"0 8px 24px rgba(251,79,7,0.4)"}}>🔐</div>
         <div style={{fontWeight:800,fontSize:18,color:"#fff",marginBottom:4}}>{lang==="ar"?"صلاحية المدير":"Manager Access"}</div>
         <div style={{fontSize:12,color:"#555",marginBottom:28}}>{lang==="ar"?"أدخل الـ PIN":"Enter PIN"}</div>
@@ -156,7 +156,7 @@ function PinGate({onUnlock,onClose,lang="ar"}) {
           ))}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-          <button onClick={onClose} style={{background:"#1a1a1a",border:"1px solid #333",borderRadius:14,color:"#aaa",fontSize:13,fontWeight:600,padding:"16px 0",cursor:"pointer"}}>{lang==="ar"?"إلغاء":"Cancel"}</button>
+          <button onClick={onClose} style={{background:"#222",border:"1px solid #444",borderRadius:14,color:"#ddd",fontSize:14,fontWeight:700,padding:"16px 0",cursor:"pointer"}}>{lang==="ar"?"إلغاء":"Cancel"}</button>
           <button onClick={()=>press("0")} style={{background:"#141414",border:"1px solid #1e1e1e",borderRadius:14,color:"#fff",fontSize:22,fontWeight:300,padding:"16px 0",cursor:"pointer"}}>0</button>
           <button onClick={()=>setPin(p=>p.slice(0,-1))} style={{background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:14,color:"#666",fontSize:20,padding:"16px 0",cursor:"pointer"}}>⌫</button>
         </div>
@@ -296,34 +296,33 @@ function Spinner() {
 // CUSTOMER APP
 // ══════════════════════════════════════════════════════════════
 function CustomerApp({lang,setLang,desktopMode=false}) {
-  const [screen,setScreen]=useState(()=>{
-    try{
-      const saved=localStorage.getItem("xb_cust_screen");
-      const cust=localStorage.getItem("xb_cust_data");
-      // Only restore card screen if we have customer data
-      if(saved==="card"&&cust) return "card";
-      return "home";
-    } catch(e){ return "home"; }
-  });
+  const [screen,setScreen]=useState("home"); // always start at home, useEffect will redirect
   const [phone,setPhone]=useState("");
-  const [customer,setCustomer]=useState(()=>{
+  const [customer,setCustomer]=useState(null);
+
+  // On mount: restore session from localStorage and refresh from DB
+  useEffect(()=>{
     try{
       const s=localStorage.getItem("xb_cust_data");
-      if(s) return JSON.parse(s);
-      return null;
-    } catch(e){ return null; }
-  });
-
-  // Refresh customer data from DB on mount if logged in
-  useEffect(()=>{
-    if(customer&&customer.id){
-      sb.getCustomerById(customer.id).then(fresh=>{
+      if(!s) return;
+      const saved=JSON.parse(s);
+      if(!saved||!saved.id) return;
+      // Fetch fresh data from Supabase
+      sb.getCustomerById(saved.id).then(fresh=>{
         if(fresh){
           setCustomer(fresh);
+          setScreen("card");
           try{ localStorage.setItem("xb_cust_data",JSON.stringify(fresh)); } catch(e){}
+        } else {
+          // Customer deleted — clear storage
+          try{ localStorage.removeItem("xb_cust_data"); localStorage.removeItem("xb_cust_screen"); } catch(e){}
         }
-      }).catch(()=>{});
-    }
+      }).catch(()=>{
+        // Offline — use cached data
+        setCustomer(saved);
+        setScreen("card");
+      });
+    } catch(e){}
   },[]);
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(false);
@@ -338,7 +337,10 @@ function CustomerApp({lang,setLang,desktopMode=false}) {
     setLoading(true); setError("");
     try {
       const c=await sb.getCustomerByPhone(phone);
-      if(c){setCustomer(c);setScreen("card");}
+      if(c){
+        setCustomer(c); setError(""); setScreen("card");
+        try{ localStorage.setItem("xb_cust_data",JSON.stringify(c)); localStorage.setItem("xb_cust_screen","card"); } catch(e){}
+      }
       else setError(ar?"الرقم غير مسجل — سجّل بطاقتك مجاناً":"Number not found — register for free");
     } catch(e){ setError(ar?"حدث خطأ":"Error occurred"); }
     setLoading(false);
