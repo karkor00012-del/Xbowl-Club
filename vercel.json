@@ -3,8 +3,10 @@
   "outputDirectory": "build",
   "framework": "create-react-app",
   "rewrites": [
-    { "source": "/staff", "destination": "/index.html" },
-    { "source": "/staff/", "destination": "/index.html" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/staff",   "destination": "/index.html" },
+    { "source": "/staff/",  "destination": "/index.html" },
+    { "source": "/manager", "destination": "/index.html" },
+    { "source": "/manager/","destination": "/index.html" },
+    { "source": "/(.*)",    "destination": "/index.html" }
   ]
 }
