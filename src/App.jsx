@@ -194,6 +194,58 @@ function QRScanner({onResult,onClose,lang="ar"}){
   );
 }
 
+// ── PWA INSTALL ────────────────────────────────────────────────
+function AddToWalletBtn({lang}){
+  const [deferredPrompt,setDeferredPrompt]=useState(null);
+  const [isIOS,setIsIOS]=useState(false);
+  const [isInstalled,setIsInstalled]=useState(false);
+  const [showIOSGuide,setShowIOSGuide]=useState(false);
+  const ar=lang==="ar";
+
+  useEffect(()=>{
+    // تحقق هل مثبت مسبقاً
+    if(window.matchMedia("(display-mode: standalone)").matches){ setIsInstalled(true); return; }
+    // iOS detection
+    const ios=/iphone|ipad|ipod/i.test(navigator.userAgent)&&!window.MSStream;
+    setIsIOS(ios);
+    // Android/Chrome beforeinstallprompt
+    const handler=e=>{ e.preventDefault(); setDeferredPrompt(e); };
+    window.addEventListener("beforeinstallprompt",handler);
+    return()=>window.removeEventListener("beforeinstallprompt",handler);
+  },[]);
+
+  if(isInstalled) return(
+    <div style={{textAlign:"center",padding:"10px",fontSize:12,color:"#22c55e",marginBottom:8}}>✓ {ar?"البطاقة مضافة للشاشة الرئيسية":"Card added to home screen"}</div>
+  );
+
+  // iOS — نعرض دليل يدوي
+  if(isIOS) return(<>
+    <button onClick={()=>setShowIOSGuide(v=>!v)} style={{width:"100%",padding:"13px",background:"linear-gradient(135deg,#1c1c1e,#2c2c2e)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+      <span style={{fontSize:18}}>⬆️</span>
+      {ar?"أضف البطاقة لشاشة iPhone":"Add Card to iPhone Home Screen"}
+    </button>
+    {showIOSGuide&&(
+      <div style={{background:"#111",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:"16px",marginBottom:10,fontSize:13,color:"#ccc",lineHeight:2}}>
+        <div style={{fontWeight:700,color:"#fff",marginBottom:8}}>{ar?"الخطوات:":"Steps:"}</div>
+        <div>١. اضغط <span style={{color:"#fb4f07"}}>⬆️ Share</span> {ar?"في متصفح Safari":"in Safari browser"}</div>
+        <div>٢. {ar?"اختر":"Choose"} <span style={{color:"#fb4f07"}}>{ar?'"إضافة إلى الشاشة الرئيسية"':'"Add to Home Screen"'}</span></div>
+        <div>٣. {ar?"اضغط":"Tap"} <span style={{color:"#fb4f07"}}>{ar?'"إضافة"':'"Add"'}</span></div>
+        <div style={{marginTop:8,fontSize:11,color:"#555"}}>{ar?"⚠️ يشتغل فقط من Safari":"⚠️ Works only from Safari"}</div>
+      </div>
+    )}
+  </>);
+
+  // Android/Chrome
+  if(deferredPrompt) return(
+    <button onClick={async()=>{ deferredPrompt.prompt(); const{outcome}=await deferredPrompt.userChoice; if(outcome==="accepted"){setIsInstalled(true);setDeferredPrompt(null);} }} style={{width:"100%",padding:"13px",background:"linear-gradient(135deg,#1c1c1e,#2c2c2e)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+      <span style={{fontSize:18}}>📲</span>
+      {ar?"أضف البطاقة للشاشة الرئيسية":"Add Card to Home Screen"}
+    </button>
+  );
+
+  return null;
+}
+
 // ══════════════════════════════════════════════════════════════
 // CUSTOMER APP
 // ══════════════════════════════════════════════════════════════
@@ -364,7 +416,8 @@ function CustomerApp({lang,setLang}){
             </div>
             {/* Tier progress */}
             {nextTier&&<div style={{background:"#0d0d0d",border:"1px solid #111",borderRadius:14,padding:"14px 18px",marginBottom:14}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><div style={{fontSize:12,color:"#555"}}>{ar?`نحو ${nextTier.ar}`:`Toward ${nextTier.en}`}</div><div style={{fontSize:12,color:nextTier.color,fontWeight:700}}>{visitsToNext} {ar?"زيارة":"visits"}</div></div><div style={{background:"#111",borderRadius:8,height:5,overflow:"hidden"}}><div style={{height:"100%",background:`linear-gradient(90deg,${nextTier.color},${nextTier.color}88)`,width:((customer.visits%(nextTier===TIERS.silver?5:15))/(nextTier===TIERS.silver?5:15)*100)+"%",borderRadius:8,transition:"width 1s"}}/></div></div>}
-            <button onClick={signout} style={{width:"100%",padding:"11px",background:"transparent",border:"1px solid #1e1e1e",borderRadius:12,color:"#444",fontSize:13,cursor:"pointer"}}>{ar?"تسجيل الخروج":"Sign Out"}</button>
+            <AddToWalletBtn lang={lang}/>
+            <button onClick={signout} style={{width:"100%",padding:"11px",background:"transparent",border:"1px solid #1e1e1e",borderRadius:12,color:"#444",fontSize:13,cursor:"pointer",marginTop:6}}>{ar?"تسجيل الخروج":"Sign Out"}</button>
           </div>
         )}
       </div>
@@ -908,7 +961,14 @@ function Portal({route,lang,setLang}){
 export default function App(){
   const [lang,setLang]=useState("ar");
   const [path,setPath]=useState(window.location.pathname);
-  useEffect(()=>{ function onPop(){setPath(window.location.pathname);} window.addEventListener("popstate",onPop); return()=>window.removeEventListener("popstate",onPop); },[]);
+  useEffect(()=>{
+    function onPop(){setPath(window.location.pathname);}
+    window.addEventListener("popstate",onPop);
+    if("serviceWorker" in navigator){
+      navigator.serviceWorker.register("/sw.js").catch(()=>{});
+    }
+    return()=>window.removeEventListener("popstate",onPop);
+  },[]);
   if(path==="/staff"||path==="/staff/") return <Portal route="/staff" lang={lang} setLang={setLang}/>;
   if(path==="/manager"||path==="/manager/") return <Portal route="/manager" lang={lang} setLang={setLang}/>;
   return <CustomerApp lang={lang} setLang={setLang}/>;
